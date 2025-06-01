@@ -64,3 +64,6 @@ def list_personas(user_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     return user.personas
 
+from email_magic_link_auth import router as auth_router
+app.include_router(auth_router)
+

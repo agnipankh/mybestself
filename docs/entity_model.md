@@ -6,6 +6,7 @@ erDiagram
     User ||--o{ Task : owns
     User ||--o{ Checkin : logs
     User ||--o{ Week : organizes
+    User ||--o{ MagicLink : authenticates
 
     Persona ||--o{ Goal : guides
     Persona ||--o{ Habit : motivates
@@ -89,6 +90,14 @@ erDiagram
     PersonaVirtue {
         UUID persona_id
         int virtue_id
+    }
+
+    MagicLink {
+        UUID id
+        string email
+        string token
+        timestamp expires_at
+        boolean used
     }
 
 ```
