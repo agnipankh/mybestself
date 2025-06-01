@@ -1,7 +1,7 @@
-# mybestself
+# README
 An agentic app that works with me to help me create the best version of myself 
 
-# To Run locally
+###  To Run locally
 
 * ```git checkout mybestself```
 * ```uvicorn main:app --reload```
