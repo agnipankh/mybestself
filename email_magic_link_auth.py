@@ -30,7 +30,7 @@ def get_db():
         db.close()
 
 # Config
-APP_URL = "http://localhost:8000"
+APP_URL = "http://localhost:3000"
 SMTP_HOST = "localhost"
 SMTP_PORT = 1025  # Mailpit's SMTP port
 FROM_EMAIL = "no-reply@mybestself.app"
@@ -56,7 +56,7 @@ def request_magic_link(payload: EmailRequest, db: Session = Depends(get_db)):
     db.commit()
 
     # Email body
-    link_url = f"{APP_URL}/auth/verify?token={token}"
+    link_url = f"{APP_URL}/login?token={token}"
     body = f"Click the link to sign in: {link_url}\n\nLink expires in 10 minutes."
     msg = MIMEText(body)
     msg["Subject"] = "Your MyBestSelf Login Link"
