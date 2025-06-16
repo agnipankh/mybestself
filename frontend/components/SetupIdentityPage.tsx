@@ -1,24 +1,23 @@
+// SetupIdentityPage.tsx - Updated to use AuthAwarePersonaService
 "use client"
 
 import { useState, useRef, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { PersonaService } from '../services/personaService'
+import { AuthAwarePersonaService } from '../services/AuthAwarePersonaService' // ✅ Updated import
 import { ChatService } from '@/services/chatService'
 import { Persona } from '../types/persona'
 import { ChatMessage } from '../types/chat'
-import { useAuth } from '@/components/AuthGuard' // ✅ Add this import
+import { useAuth } from '@/components/AuthGuard'
 
 export default function SetupIdentityPage() {
-  // ✅ All hooks must be called at the top level consistently
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   
-  // Services - using refs to maintain instances across renders
-  const personaService = useRef(new PersonaService(9))
+  // ✅ Use AuthAwarePersonaService instead of PersonaService
+  const personaService = useRef(new AuthAwarePersonaService(9))
   const chatService = useRef(new ChatService())
 
-  // State - always declare these, regardless of loading state
   const [personas, setPersonas] = useState<Persona[]>([])
   const [userInput, setUserInput] = useState("")
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => 
@@ -28,18 +27,35 @@ export default function SetupIdentityPage() {
   const [initializing, setInitializing] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+  
+  // ✅ Add sync status tracking
+  const [syncStatus, setSyncStatus] = useState({
+    isAuthenticated: false,
+    lastSyncTime: null as Date | null,
+    hasPendingChanges: false
+  })
 
-  // Debounced update function for real-time edits
   const updateTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
-  // Handle client-side hydration
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // Initialize personas from localStorage
+  // ✅ Update sync status periodically
   useEffect(() => {
-    if (!mounted || authLoading) return // Wait for both hydration AND auth
+    const updateSyncStatus = () => {
+      setSyncStatus(personaService.current.getSyncStatus())
+    }
+
+    updateSyncStatus()
+    const interval = setInterval(updateSyncStatus, 5000) // Update every 5 seconds
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Initialize personas
+  useEffect(() => {
+    if (!mounted || authLoading) return
 
     const initializePersonas = async () => {
       setInitializing(true)
@@ -51,7 +67,6 @@ export default function SetupIdentityPage() {
         setPersonas(result.data)
       } else {
         setError(result.error || 'Failed to load personas')
-        // Still show any personas that might exist
         setPersonas(personaService.current.getPersonas())
       }
       
@@ -59,9 +74,29 @@ export default function SetupIdentityPage() {
     }
 
     initializePersonas()
-  }, [mounted, authLoading]) // ✅ Wait for both mounted AND auth to be ready
+  }, [mounted, authLoading])
 
-  // Handle chat message sending
+  // ✅ Handle manual sync
+  const handleManualSync = async () => {
+    if (!user) return
+    
+    setLoading(true)
+    try {
+      const result = await personaService.current.forceSyncToCloud()
+      if (result.success) {
+        // Refresh personas after sync
+        setPersonas(personaService.current.getPersonas())
+      } else {
+        setError(result.error || 'Sync failed')
+      }
+    } catch (error) {
+      setError('Sync failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Send message (unchanged)
   const sendMessage = async () => {
     if (!userInput.trim()) return
 
@@ -74,10 +109,8 @@ export default function SetupIdentityPage() {
       setChatMessages(chatService.current.getMessages())
 
       if (result.success && result.coachReply) {
-        // Parse and apply persona updates
         const updates = personaService.current.parsePersonaUpdates(result.coachReply)
         if (updates.length > 0) {
-          console.log('Applying persona updates:', updates)
           const updatedPersonas = await personaService.current.applyUpdates(updates)
           setPersonas(updatedPersonas)
         }
@@ -90,36 +123,32 @@ export default function SetupIdentityPage() {
     }
   }
 
-  // Handle persona updates with debouncing for real-time edits
+  // Update persona (unchanged)
   const updatePersona = (id: string, field: 'name' | 'northStar', value: string) => {
-    // Update UI immediately for responsive feel
     setPersonas(prev => prev.map(p => 
       p.id === id ? { ...p, [field]: value } : p
     ))
 
-    // Clear existing timeout for this persona+field
     const timeoutKey = `${id}-${field}`
     const existingTimeout = updateTimeouts.current.get(timeoutKey)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
     }
 
-    // Set new timeout to save after user stops typing
     const newTimeout = setTimeout(async () => {
       const result = await personaService.current.updatePersona(id, { [field]: value })
       if (!result.success) {
         console.error('Failed to update persona:', result.error)
         setError(`Failed to save changes: ${result.error}`)
-        // Revert to original value if update failed
         setPersonas(personaService.current.getPersonas())
       }
       updateTimeouts.current.delete(timeoutKey)
-    }, 1000) // 1 second delay
+    }, 1000)
 
     updateTimeouts.current.set(timeoutKey, newTimeout)
   }
 
-  // Handle persona removal
+  // Remove persona (unchanged)
   const removePersona = async (id: string) => {
     const result = await personaService.current.removePersona(id)
     if (result.success) {
@@ -129,7 +158,6 @@ export default function SetupIdentityPage() {
     }
   }
 
-  // ✅ Show loading state if auth is loading OR component is initializing
   if (authLoading || !mounted || initializing) {
     return (
       <main className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
@@ -145,14 +173,49 @@ export default function SetupIdentityPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-4">
-      {/* Auth Status Banner (Optional) */}
-      {user && (
+      {/* ✅ Enhanced Auth Status Banner with Sync Info */}
+      {user ? (
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center">
-            <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            <span className="text-blue-800">Signed in - your personas are synced across devices</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className={`w-3 h-3 rounded-full mr-2 ${
+                syncStatus.hasPendingChanges ? 'bg-yellow-500' : 'bg-green-500'
+              }`}></div>
+              <span className="text-blue-800">
+                {syncStatus.hasPendingChanges ? 'Syncing...' : 'Cloud synced'}
+              </span>
+              {syncStatus.lastSyncTime && (
+                <span className="text-blue-600 text-sm ml-2">
+                  Last sync: {syncStatus.lastSyncTime.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleManualSync}
+              disabled={loading}
+              className="text-blue-800 border-blue-400 hover:bg-blue-100"
+            >
+              {loading ? 'Syncing...' : 'Force Sync'}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <span className="text-yellow-800">Local storage only - personas not backed up</span>
+            </div>
+            <a 
+              href="/login" 
+              className="text-yellow-800 hover:text-yellow-900 underline text-sm"
+            >
+              Sign in to enable cloud backup
+            </a>
           </div>
         </div>
       )}
@@ -178,15 +241,16 @@ export default function SetupIdentityPage() {
       )}
 
       <div className="flex gap-6">
-        {/* Chat Panel */}
+        {/* Chat Panel - Enhanced with sync status */}
         <div className="w-1/3 bg-white p-4 rounded-xl shadow h-[80vh] flex flex-col">
-          {/* User status in chat header */}
           <div className="mb-4 pb-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
-                <div className={`w-3 h-3 rounded-full mr-2 ${user ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                <div className={`w-3 h-3 rounded-full mr-2 ${
+                  user ? (syncStatus.hasPendingChanges ? 'bg-yellow-500' : 'bg-green-500') : 'bg-gray-400'
+                }`}></div>
                 <span className="text-sm text-gray-600">
-                  {user ? 'Synced' : 'Local only'}
+                  {user ? (syncStatus.hasPendingChanges ? 'Syncing' : 'Synced') : 'Local only'}
                 </span>
               </div>
               {!user && (
@@ -200,6 +264,7 @@ export default function SetupIdentityPage() {
             </div>
           </div>
 
+          {/* Chat messages - unchanged */}
           <div className="flex-1 overflow-y-auto mb-4 space-y-3">
             {chatMessages.map((msg) => (
               <div
@@ -224,6 +289,7 @@ export default function SetupIdentityPage() {
             )}
           </div>
 
+          {/* Chat input - unchanged */}
           <div className="flex gap-2">
             <Input
               placeholder="Describe yourself, your roles, your aspirations..."
@@ -248,14 +314,18 @@ export default function SetupIdentityPage() {
           </div>
         </div>
 
-        {/* Personas Panel */}
+        {/* Personas Panel - Enhanced with better sync indicators */}
         <div className="w-2/3 bg-white rounded-xl shadow p-6 h-[80vh] overflow-y-auto">
           <div className="mb-6 flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">Your Personas</h2>
             <div className="flex items-center gap-3">
               {user && (
-                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                  Cloud Synced
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  syncStatus.hasPendingChanges 
+                    ? 'text-yellow-700 bg-yellow-100' 
+                    : 'text-green-700 bg-green-100'
+                }`}>
+                  {syncStatus.hasPendingChanges ? 'Syncing...' : 'Cloud Synced'}
                 </span>
               )}
               <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
@@ -264,6 +334,7 @@ export default function SetupIdentityPage() {
             </div>
           </div>
           
+          {/* Personas grid - unchanged */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {personas.map(persona => (
               <Card key={persona.id} className="bg-gradient-to-br from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 transition-all duration-200 border-gray-200">
@@ -299,6 +370,7 @@ export default function SetupIdentityPage() {
             ))}
           </div>
           
+          {/* Empty state - unchanged */}
           {personas.length === 0 && (
             <div className="text-center text-gray-500 mt-12">
               <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
@@ -317,26 +389,6 @@ export default function SetupIdentityPage() {
           )}
         </div>
       </div>
-      
-      {/* Debug Panel (remove in production) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-          <details>
-            <summary className="text-sm font-medium text-yellow-800 cursor-pointer">
-              Debug Info (Dev Only)
-            </summary>
-            <pre className="mt-2 text-xs text-yellow-700 overflow-auto">
-              {JSON.stringify({ 
-                personaCount: personas.length,
-                user: user ? { id: user.id, email: user.email } : null,
-                isAuthenticated,
-                authLoading,
-                personas: personas.map(p => ({...p, id: p.id}))
-              }, null, 2)}
-            </pre>
-          </details>
-        </div>
-      )}
     </main>
   )
 }

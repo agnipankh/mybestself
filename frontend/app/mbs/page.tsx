@@ -1,3 +1,4 @@
+// app/mbs/page.tsx
 import AuthGuard from '@/components/AuthGuard'
 import SetupIdentityPage from '@/components/SetupIdentityPage'
 
