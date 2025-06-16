@@ -7,8 +7,8 @@ import { authService, User } from '@/services/authService'
 
 interface AuthGuardProps {
   children: React.ReactNode
-  requireAuth?: boolean // If false, allows both authenticated and anonymous users
-  redirectTo?: string   // Where to redirect if auth is required but user not authenticated
+  requireAuth?: boolean
+  redirectTo?: string
 }
 
 export default function AuthGuard({ 
@@ -17,17 +17,23 @@ export default function AuthGuard({
   redirectTo = '/login' 
 }: AuthGuardProps) {
   const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(true) // ✅ Start with loading
+  const [mounted, setMounted] = useState(false)    // ✅ Add mounted state
   const router = useRouter()
   const pathname = usePathname()
 
+  // ✅ Handle client-side mounting
   useEffect(() => {
-    // Listen to auth state changes
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return // ✅ Don't run until mounted
+
     const unsubscribe = authService.onAuthStateChange((newUser) => {
       setUser(newUser)
       setIsLoading(false)
 
-      // If auth is required and user is not authenticated, redirect to login
       if (requireAuth && !newUser) {
         const redirectUrl = `${redirectTo}?redirect=${encodeURIComponent(pathname)}`
         router.push(redirectUrl)
@@ -39,17 +45,16 @@ export default function AuthGuard({
     setUser(currentUser)
     setIsLoading(false)
 
-    // If auth is required and no user, redirect immediately
     if (requireAuth && !currentUser) {
       const redirectUrl = `${redirectTo}?redirect=${encodeURIComponent(pathname)}`
       router.push(redirectUrl)
     }
 
     return unsubscribe
-  }, [requireAuth, redirectTo, pathname, router])
+  }, [mounted, requireAuth, redirectTo, pathname, router])
 
-  // Show loading state while checking auth
-  if (isLoading) {
+  // ✅ Show consistent loading state during SSR and initial load
+  if (!mounted || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -60,28 +65,34 @@ export default function AuthGuard({
     )
   }
 
-  // If auth is required but user is not authenticated, don't render anything
-  // (the redirect will happen in useEffect)
+  // If auth is required but user is not authenticated, don't render
   if (requireAuth && !user) {
     return null
   }
 
-  // Render children with user context
   return <>{children}</>
 }
 
-// Hook to use auth state in components
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(authService.getCurrentUser())
+  const [user, setUser] = useState<User | null>(null)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    const unsubscribe = authService.onAuthStateChange(setUser)
-    return unsubscribe
+    setMounted(true)
   }, [])
 
+  useEffect(() => {
+    if (!mounted) return
+
+    setUser(authService.getCurrentUser())
+    const unsubscribe = authService.onAuthStateChange(setUser)
+    return unsubscribe
+  }, [mounted])
+
   return {
-    user,
-    isAuthenticated: !!user,
+    user: mounted ? user : null,
+    isAuthenticated: mounted ? !!user : false,
     signOut: () => authService.signOut(),
+    isLoading: !mounted // ✅ This is what prevents hydration errors
   }
 }

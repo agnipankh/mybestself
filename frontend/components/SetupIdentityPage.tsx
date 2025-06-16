@@ -8,13 +8,17 @@ import { PersonaService } from '../services/personaService'
 import { ChatService } from '@/services/chatService'
 import { Persona } from '../types/persona'
 import { ChatMessage } from '../types/chat'
+import { useAuth } from '@/components/AuthGuard' // ✅ Add this import
 
 export default function SetupIdentityPage() {
+  // ✅ All hooks must be called at the top level consistently
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth()
+  
   // Services - using refs to maintain instances across renders
   const personaService = useRef(new PersonaService(9))
   const chatService = useRef(new ChatService())
 
-  // State
+  // State - always declare these, regardless of loading state
   const [personas, setPersonas] = useState<Persona[]>([])
   const [userInput, setUserInput] = useState("")
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => 
@@ -35,7 +39,7 @@ export default function SetupIdentityPage() {
 
   // Initialize personas from localStorage
   useEffect(() => {
-    if (!mounted) return // Wait for hydration
+    if (!mounted || authLoading) return // Wait for both hydration AND auth
 
     const initializePersonas = async () => {
       setInitializing(true)
@@ -55,7 +59,7 @@ export default function SetupIdentityPage() {
     }
 
     initializePersonas()
-  }, [mounted])
+  }, [mounted, authLoading]) // ✅ Wait for both mounted AND auth to be ready
 
   // Handle chat message sending
   const sendMessage = async () => {
@@ -125,12 +129,15 @@ export default function SetupIdentityPage() {
     }
   }
 
-  if (!mounted || initializing) {
+  // ✅ Show loading state if auth is loading OR component is initializing
+  if (authLoading || !mounted || initializing) {
     return (
       <main className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading your personas...</p>
+          <p className="text-gray-600">
+            {authLoading ? 'Loading auth...' : 'Loading your personas...'}
+          </p>
         </div>
       </main>
     )
@@ -138,6 +145,18 @@ export default function SetupIdentityPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-4">
+      {/* Auth Status Banner (Optional) */}
+      {user && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <span className="text-blue-800">Signed in - your personas are synced across devices</span>
+          </div>
+        </div>
+      )}
+
       {/* Error Banner */}
       {error && (
         <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg flex items-center justify-between">
@@ -161,6 +180,26 @@ export default function SetupIdentityPage() {
       <div className="flex gap-6">
         {/* Chat Panel */}
         <div className="w-1/3 bg-white p-4 rounded-xl shadow h-[80vh] flex flex-col">
+          {/* User status in chat header */}
+          <div className="mb-4 pb-3 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className={`w-3 h-3 rounded-full mr-2 ${user ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                <span className="text-sm text-gray-600">
+                  {user ? 'Synced' : 'Local only'}
+                </span>
+              </div>
+              {!user && (
+                <a 
+                  href="/login" 
+                  className="text-xs text-blue-600 hover:text-blue-800 underline"
+                >
+                  Sign in to sync
+                </a>
+              )}
+            </div>
+          </div>
+
           <div className="flex-1 overflow-y-auto mb-4 space-y-3">
             {chatMessages.map((msg) => (
               <div
@@ -213,9 +252,16 @@ export default function SetupIdentityPage() {
         <div className="w-2/3 bg-white rounded-xl shadow p-6 h-[80vh] overflow-y-auto">
           <div className="mb-6 flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">Your Personas</h2>
-            <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-              {personas.length}/9
-            </span>
+            <div className="flex items-center gap-3">
+              {user && (
+                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                  Cloud Synced
+                </span>
+              )}
+              <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                {personas.length}/9
+              </span>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -262,6 +308,11 @@ export default function SetupIdentityPage() {
               </div>
               <h3 className="text-lg font-medium text-gray-600 mb-2">No personas yet</h3>
               <p className="text-gray-500">Start chatting with the coach to discover and define your different personas!</p>
+              {!user && (
+                <p className="text-gray-400 text-sm mt-2">
+                  💡 <a href="/login" className="text-blue-500 hover:underline">Sign in</a> to save your personas across devices
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -276,7 +327,10 @@ export default function SetupIdentityPage() {
             </summary>
             <pre className="mt-2 text-xs text-yellow-700 overflow-auto">
               {JSON.stringify({ 
-                personaCount: personas.length, 
+                personaCount: personas.length,
+                user: user ? { id: user.id, email: user.email } : null,
+                isAuthenticated,
+                authLoading,
                 personas: personas.map(p => ({...p, id: p.id}))
               }, null, 2)}
             </pre>

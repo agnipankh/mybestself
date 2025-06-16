@@ -1,16 +1,26 @@
 # FastAPI Backend for MVP with SQLAlchemy + Postgres
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from db import SessionLocal, init_db
 from models import User, Persona
-from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 
 # Initialize DB on startup
 @app.on_event("startup")
@@ -110,13 +120,5 @@ def list_personas(user_id: str, db: Session = Depends(get_db)):
 from email_magic_link_auth import router as auth_router
 app.include_router(auth_router)
 
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 

@@ -6,7 +6,7 @@ export interface Persona {
   updatedAt: Date
 }
 
-xport interface PersonaUpdate {
+export interface PersonaUpdate {
   name?: string
   northStar?: string
 }

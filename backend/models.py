@@ -5,12 +5,14 @@ from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
+from uuid import uuid4
+
 
 Base = declarative_base()
 
 class User(Base):
     __tablename__ = 'users'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     name = Column(String, nullable=True)
     email = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -22,8 +24,8 @@ class User(Base):
 class Persona(Base):
     __tablename__ = "personas"
     
-    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
-    user_id = Column(String, ForeignKey("users.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)          # ✅ UUID
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id')) 
     label = Column(String)
     north_star = Column(String)
     is_calling = Column(Boolean, default=False)
@@ -35,7 +37,7 @@ class Persona(Base):
 
 class MagicLink(Base):
     __tablename__ = 'magic_links'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)         # ✅ UUID   
     email = Column(String, nullable=False)
     token = Column(String, unique=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)

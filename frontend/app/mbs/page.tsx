@@ -9,6 +9,24 @@ export default function HomePage() {
   )
 }
 
+// In app/mbs/page.tsx - temporarily add this
+//import ApiTest from '@/components/ApiTest'
+//
+//export default function MbsPage() {
+//  return (
+//    <div>
+//      {/* Your existing SetupIdentityPage */}
+//      
+//      {/* Temporary test section */}
+//      <div className="mt-8 border-t pt-8">
+//        <ApiTest />
+//      </div>
+//    </div>
+//  )
+//}
+
+
+
 // OR if you want to require authentication:
 // export default function HomePage() {
 //   return (
