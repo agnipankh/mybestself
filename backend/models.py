@@ -20,14 +20,16 @@ class User(Base):
 
 
 class Persona(Base):
-    __tablename__ = 'personas'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'))
-    label = Column(String, nullable=False)
-    north_star = Column(Text)
+    __tablename__ = "personas"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    user_id = Column(String, ForeignKey("users.id"))
+    label = Column(String)
+    north_star = Column(String)
     is_calling = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Add this
+    
     user = relationship("User", back_populates="personas")
 
 

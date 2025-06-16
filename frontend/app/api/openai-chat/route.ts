@@ -7,7 +7,8 @@ export async function POST(req: Request) {
 
     const openaiUrl = "https://api.openai.com/v1/chat/completions"
     const payload = {
-      model: "gpt-4o",
+      //model: "gpt-4o","gpt-4.1""GPT-4.1-mini"
+      model: "gpt-4.1-mini",
       messages: messages.map((msg: any) => ({
         role: msg.from === "user" ? "user" : "assistant",
         content: msg.text,

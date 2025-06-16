@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 from db import SessionLocal, init_db
 from models import User, Persona
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
+from datetime import datetime
+from uuid import UUID
 
 app = FastAPI()
 
@@ -57,6 +60,45 @@ def create_persona(persona: PersonaCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_persona)
     return db_persona
+
+@app.delete("/personas/")
+def delete_persona(user_id: str, label: str, db: Session = Depends(get_db)):
+    persona = db.query(Persona).filter_by(user_id=user_id, label=label).first()
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona not found")
+
+    db.delete(persona)
+    db.commit()
+    return {"message": f"Persona '{label}' deleted for user {user_id}"}
+
+
+class PersonaUpdate(BaseModel):
+    label: Optional[str] = None
+    north_star: Optional[str] = None
+    is_calling: Optional[bool] = None
+
+
+@app.put("/personas/{persona_id}")
+def update_persona(persona_id: str, persona_update: PersonaUpdate, db: Session = Depends(get_db)):
+    """Update an existing persona"""
+    persona = db.get(Persona, persona_id)
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona not found")
+    
+    # Update only the fields that were provided
+    if persona_update.label is not None:
+        persona.label = persona_update.label
+    if persona_update.north_star is not None:
+        persona.north_star = persona_update.north_star
+    if persona_update.is_calling is not None:
+        persona.is_calling = persona_update.is_calling
+    
+    # Update the timestamp (you'll need to add this field to your Persona model)
+    persona.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(persona)
+    return persona
 
 @app.get("/users/{user_id}/personas")
 def list_personas(user_id: str, db: Session = Depends(get_db)):

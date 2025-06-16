@@ -87,5 +87,8 @@ def verify_magic_link(token: str, db: Session = Depends(get_db)):
     link.used = True
     db.commit()
 
-    return {"message": "Authentication successful", "user_id": user.id}
+    return {"message": "Authentication successful", 
+            "user_id": str(user.id),
+            "email": user.email
+    }
 
