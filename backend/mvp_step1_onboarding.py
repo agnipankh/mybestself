@@ -9,6 +9,7 @@ from models import User, Persona
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
+from sqlalchemy.exc import IntegrityError
 
 app = FastAPI()
 
@@ -41,19 +42,37 @@ class UserCreate(BaseModel):
     email: str
 
 class PersonaCreate(BaseModel):
-    user_id: str
+    user_id: UUID
     label: str
     north_star: str
     is_calling: bool = False
 
 # Routes
+from sqlalchemy.exc import IntegrityError
+
 @app.post("/users/")
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = User(name=user.name, email=user.email)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+    try:
+        db_user = User(name=user.name, email=user.email)
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except IntegrityError as e:
+        db.rollback()
+        # Check if it's a unique constraint violation on email
+        if "email" in str(e.orig):
+            raise HTTPException(
+                status_code=409, 
+                detail=f"User with email '{user.email}' already exists"
+            )
+        # Re-raise other integrity errors
+        raise HTTPException(status_code=400, detail="Database constraint violation")
+
+
+
+
+
 
 @app.post("/personas/")
 def create_persona(persona: PersonaCreate, db: Session = Depends(get_db)):
@@ -89,7 +108,7 @@ class PersonaUpdate(BaseModel):
 
 
 @app.put("/personas/{persona_id}")
-def update_persona(persona_id: str, persona_update: PersonaUpdate, db: Session = Depends(get_db)):
+def update_persona(persona_id: UUID, persona_update: PersonaUpdate, db: Session = Depends(get_db)):
     """Update an existing persona"""
     persona = db.get(Persona, persona_id)
     if not persona:
@@ -111,7 +130,7 @@ def update_persona(persona_id: str, persona_update: PersonaUpdate, db: Session =
     return persona
 
 @app.get("/users/{user_id}/personas")
-def list_personas(user_id: str, db: Session = Depends(get_db)):
+def list_personas(user_id: UUID, db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

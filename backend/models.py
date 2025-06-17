@@ -25,7 +25,7 @@ class Persona(Base):
     __tablename__ = "personas"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)          # ✅ UUID
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id')) 
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False) 
     label = Column(String)
     north_star = Column(String)
     is_calling = Column(Boolean, default=False)

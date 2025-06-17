@@ -61,6 +61,16 @@ You may return multiple personas in one message. Use only this exact format with
         ...this.messages.filter(m => m.from !== 'system')
       ]
 
+      // 🎯 ADD THIS DEBUG LOG
+      console.log('🤖 FULL PROMPT BEING SENT TO CHATGPT:')
+      console.log('=====================================')
+      apiMessages.forEach((msg, index) => {
+        console.log(`${index + 1}. ${msg.from?.toUpperCase() || 'SYSTEM'}:`)
+        console.log(msg.text)
+        console.log('-------------------------------------')
+      })
+      console.log('=====================================')
+
       const response = await fetch(this.apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

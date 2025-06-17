@@ -1,0 +1,48 @@
+# test-requirements.txt - Testing dependencies for CI/CD pipeline
+
+# Core testing framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.12.0
+
+# FastAPI testing
+httpx>=0.25.0
+
+# Database testing
+pytest-postgresql>=5.0.0
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# Coverage reporting
+pytest-cov>=4.1.0
+coverage>=7.3.0
+
+# Test utilities
+faker>=20.0.0
+factory-boy>=3.3.0
+
+# Email testing
+aiosmtpd>=1.4.6
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Additional testing utilities
+pytest-xdist>=3.5.0  # For parallel test execution
+pytest-html>=4.1.0   # For HTML test reports
+pytest-timeout>=2.2.0  # For test timeouts
+
+# Code quality tools
+flake8>=6.0.0
+black>=23.0.0
+isort>=5.12.0
+
+# Security scanning tools
+bandit>=1.7.5
+# safety>=3.2.0  # Commented out due to version conflicts - install separately if needed
+
+# Performance testing
+pytest-benchmark>=4.0.0
+
+# Development tools
+pytest-watch>=4.2.0
