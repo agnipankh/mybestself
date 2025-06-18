@@ -35,11 +35,16 @@ class ApiClient {
     this.baseUrl = baseUrl
   }
 
+  /**
+   * Generic request method with better error handling
+   */
   private async request<T>(
     endpoint: string, 
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`
+    
+    console.log(`[ApiClient] ${options.method || 'GET'} ${url}`)
     
     const response = await fetch(url, {
       headers: {
@@ -50,14 +55,20 @@ class ApiClient {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+      const error = await response.json().catch(() => ({ 
+        detail: `HTTP ${response.status}: ${response.statusText}` 
+      }))
+      console.error(`[ApiClient] Error ${response.status}:`, error)
       throw new Error(error.detail || `HTTP ${response.status}`)
     }
 
     return response.json()
   }
 
-  // User operations
+  // ============================================
+  // USER OPERATIONS
+  // ============================================
+
   async createUser(userData: CreateUserRequest): Promise<BackendUser> {
     return this.request<BackendUser>('/users/', {
       method: 'POST',
@@ -65,7 +76,17 @@ class ApiClient {
     })
   }
 
-  // Persona operations
+  async getUser(userId: string): Promise<BackendUser> {
+    return this.request<BackendUser>(`/users/${userId}`)
+  }
+
+  // ============================================
+  // PERSONA OPERATIONS - RESTful Design
+  // ============================================
+
+  /**
+   * Create a new persona
+   */
   async createPersona(personaData: CreatePersonaRequest): Promise<BackendPersona> {
     return this.request<BackendPersona>('/personas/', {
       method: 'POST',
@@ -73,22 +94,85 @@ class ApiClient {
     })
   }
 
+  /**
+   * Get all personas for a user
+   */
   async getPersonas(userId: string): Promise<BackendPersona[]> {
     return this.request<BackendPersona[]>(`/users/${userId}/personas`)
   }
 
-  async deletePersona(userId: string, label: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>(`/personas/?user_id=${userId}&label=${encodeURIComponent(label)}`, {
-      method: 'DELETE',
-    })
+  /**
+   * Get a specific persona by ID
+   */
+  async getPersona(personaId: string): Promise<BackendPersona> {
+    return this.request<BackendPersona>(`/personas/${personaId}`)
   }
 
-  // Note: Your backend doesn't have update endpoint yet, you'll need to add one
+  /**
+   * Update a persona by ID
+   */
   async updatePersona(personaId: string, updates: Partial<CreatePersonaRequest>): Promise<BackendPersona> {
     return this.request<BackendPersona>(`/personas/${personaId}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     })
+  }
+
+  /**
+   * Delete a persona by ID (preferred method)
+   */
+  async deletePersonaById(personaId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/personas/${personaId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  /**
+   * Delete a persona by user ID and label (legacy method for backward compatibility)
+   */
+  async deletePersona(userId: string, label: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/users/${userId}/personas/${encodeURIComponent(label)}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // ============================================
+  // CONVERSATION OPERATIONS
+  // ============================================
+
+  async createConversation(data: {
+    persona_id: string
+    discussion_type: string
+    topic: string
+  }): Promise<any> {
+    return this.request('/conversations/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async addMessageToConversation(conversationId: string, message: {
+    from_role: string
+    text: string
+  }): Promise<any> {
+    return this.request(`/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(message),
+    })
+  }
+
+  async completeConversation(conversationId: string, completion: {
+    key_insights: string[]
+    summary?: string
+  }): Promise<any> {
+    return this.request(`/conversations/${conversationId}/complete`, {
+      method: 'PATCH',
+      body: JSON.stringify(completion),
+    })
+  }
+
+  async getPersonaConversations(personaId: string): Promise<any[]> {
+    return this.request(`/personas/${personaId}/conversations`)
   }
 }
 

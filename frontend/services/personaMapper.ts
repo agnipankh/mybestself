@@ -1,6 +1,6 @@
 // services/personaMapper.ts
 import { Persona } from '../types/persona'
-import { BackendPersona, CreatePersonaRequest } from './apiClient'
+import { BackendPersona, CreatePersonaRequest, UpdatePersonaRequest } from './apiClient'
 
 export class PersonaMapper {
   /**
@@ -30,9 +30,10 @@ export class PersonaMapper {
 
   /**
    * Convert frontend persona update to backend update request
+   * Fixed: Now uses UpdatePersonaRequest type and correct field mapping
    */
-  static toBackendUpdate(persona: Partial<Persona>): Partial<CreatePersonaRequest> {
-    const update: Partial<CreatePersonaRequest> = {}
+  static toBackendUpdate(persona: Partial<Persona>): UpdatePersonaRequest {
+    const update: UpdatePersonaRequest = {}
     
     if (persona.name !== undefined) {
       update.label = persona.name
@@ -41,6 +42,9 @@ export class PersonaMapper {
     if (persona.northStar !== undefined) {
       update.north_star = persona.northStar
     }
+    
+    // Note: is_calling is not typically updated from the frontend
+    // but you can add it here if needed
     
     return update
   }

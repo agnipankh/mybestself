@@ -1,12 +1,12 @@
-// SetupIdentityPage.tsx - Updated to use AuthAwarePersonaService
+// components/SetupIdentityPage.tsx - Updated with database persistence
 "use client"
 
 import { useState, useRef, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { AuthAwarePersonaService } from '../services/AuthAwarePersonaService' // ✅ Updated import
-import { ChatService } from '@/services/chatService'
+import { AuthAwarePersonaService } from '../services/AuthAwarePersonaService'
+import { ChatService } from '@/services/chatService' // ✅ Enhanced import
 import { Persona } from '../types/persona'
 import { ChatMessage } from '../types/chat'
 import { useAuth } from '@/components/AuthGuard'
@@ -14,25 +14,36 @@ import { useAuth } from '@/components/AuthGuard'
 export default function SetupIdentityPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   
-  // ✅ Use AuthAwarePersonaService instead of PersonaService
+  // ✅ Enhanced service initialization
   const personaService = useRef(new AuthAwarePersonaService(9))
-  const chatService = useRef(new ChatService())
+  const chatService = useRef(new ChatService({
+    apiEndpoint: '/api/openai-chat',
+    maxMessages: 50,
+    enableLogging: true,
+    backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
+  }))
 
   const [personas, setPersonas] = useState<Persona[]>([])
   const [userInput, setUserInput] = useState("")
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => 
-    chatService.current.getMessages()
-  )
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   
-  // ✅ Add sync status tracking
+  // ✅ Enhanced sync status tracking
   const [syncStatus, setSyncStatus] = useState({
     isAuthenticated: false,
     lastSyncTime: null as Date | null,
     hasPendingChanges: false
+  })
+
+  // ✅ Add chat sync status
+  const [chatSyncStatus, setChatSyncStatus] = useState({
+    isOnline: true,
+    conversationId: null as string | null,
+    pendingMessages: 0,
+    lastSyncTime: null as Date | null
   })
 
   const updateTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map())
@@ -41,42 +52,113 @@ export default function SetupIdentityPage() {
     setMounted(true)
   }, [])
 
-  // ✅ Update sync status periodically
+  // ✅ Update sync status periodically (for personas)
   useEffect(() => {
     const updateSyncStatus = () => {
       setSyncStatus(personaService.current.getSyncStatus())
     }
 
     updateSyncStatus()
-    const interval = setInterval(updateSyncStatus, 5000) // Update every 5 seconds
+    const interval = setInterval(updateSyncStatus, 5000)
 
     return () => clearInterval(interval)
   }, [])
 
-  // Initialize personas
+  // ✅ Update chat sync status periodically
+  useEffect(() => {
+    const updateChatSyncStatus = () => {
+      setChatSyncStatus(chatService.current.getSyncStatus())
+    }
+
+    updateChatSyncStatus()
+    const interval = setInterval(updateChatSyncStatus, 2000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // ✅ Enhanced initialization with chat service
   useEffect(() => {
     if (!mounted || authLoading) return
 
-    const initializePersonas = async () => {
+    const initializeServices = async () => {
       setInitializing(true)
       setError(null)
       
-      const result = await personaService.current.initialize()
-      
-      if (result.success && result.data) {
-        setPersonas(result.data)
-      } else {
-        setError(result.error || 'Failed to load personas')
-        setPersonas(personaService.current.getPersonas())
+      try {
+        // Initialize persona service
+        const personaResult = await personaService.current.initialize()
+        
+        if (personaResult.success && personaResult.data) {
+          setPersonas(personaResult.data)
+        } else {
+          setError(personaResult.error || 'Failed to load personas')
+          setPersonas(personaService.current.getPersonas())
+        }
+
+        // ✅ Initialize chat service with user context
+        if (user?.id) {
+          await chatService.current.initialize(user.id)
+        }
+        
+        // Load initial chat messages
+        setChatMessages(chatService.current.getMessages())
+        
+      } catch (error: any) {
+        console.error('Initialization error:', error)
+        setError(`Initialization failed: ${error.message}`)
+      } finally {
+        setInitializing(false)
       }
-      
-      setInitializing(false)
     }
 
-    initializePersonas()
-  }, [mounted, authLoading])
+    initializeServices()
+  }, [mounted, authLoading, user?.id])
 
-  // ✅ Handle manual sync
+  // ✅ Enhanced message sending with database persistence
+  const sendMessage = async () => {
+    if (!userInput.trim()) return
+
+    setLoading(true)
+    setError(null)
+    
+    try {
+      // ✅ Use enhanced ChatService with automatic persistence
+      const result = await chatService.current.sendMessage(userInput)
+      setUserInput("")
+      setChatMessages(chatService.current.getMessages())
+
+      if (result.success && result.coachReply) {
+        // Parse persona updates using the improved method
+        const updates = chatService.current.parsePersonaUpdates(result.coachReply)
+        
+        if (updates.length > 0) {
+          console.log('Applying persona updates:', updates)
+          
+          // Convert to the format expected by PersonaService
+          const personaUpdates = updates.map(update => ({
+            id: update.previousName ? 
+              personas.find(p => p.name === update.previousName)?.id : 
+              undefined,
+            name: update.name,
+            northStar: update.northStar,
+            action: update.action
+          }))
+
+          const updatedPersonas = await personaService.current.applyUpdates(personaUpdates)
+          setPersonas(updatedPersonas)
+        }
+      } else if (!result.success) {
+        setError(result.error || 'Failed to get response from coach')
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      setError('Failed to send message. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ✅ Manual sync handler
   const handleManualSync = async () => {
     if (!user) return
     
@@ -84,8 +166,8 @@ export default function SetupIdentityPage() {
     try {
       const result = await personaService.current.forceSyncToCloud()
       if (result.success) {
-        // Refresh personas after sync
         setPersonas(personaService.current.getPersonas())
+        setError(null)
       } else {
         setError(result.error || 'Sync failed')
       }
@@ -96,59 +178,42 @@ export default function SetupIdentityPage() {
     }
   }
 
-  // Send message (unchanged)
-  const sendMessage = async () => {
-    if (!userInput.trim()) return
-
-    setLoading(true)
-    setError(null)
-    
-    try {
-      const result = await chatService.current.sendMessage(userInput)
-      setUserInput("")
-      setChatMessages(chatService.current.getMessages())
-
-      if (result.success && result.coachReply) {
-        const updates = personaService.current.parsePersonaUpdates(result.coachReply)
-        if (updates.length > 0) {
-          const updatedPersonas = await personaService.current.applyUpdates(updates)
-          setPersonas(updatedPersonas)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to send message:', error)
-      setError('Failed to send message. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Update persona (unchanged)
+  // Enhanced persona update with debouncing
   const updatePersona = (id: string, field: 'name' | 'northStar', value: string) => {
+    // Optimistic update for immediate UI feedback
     setPersonas(prev => prev.map(p => 
       p.id === id ? { ...p, [field]: value } : p
     ))
 
+    // Clear existing timeout for this field
     const timeoutKey = `${id}-${field}`
     const existingTimeout = updateTimeouts.current.get(timeoutKey)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
     }
 
+    // Set new timeout for API call
     const newTimeout = setTimeout(async () => {
-      const result = await personaService.current.updatePersona(id, { [field]: value })
-      if (!result.success) {
-        console.error('Failed to update persona:', result.error)
-        setError(`Failed to save changes: ${result.error}`)
+      try {
+        const result = await personaService.current.updatePersona(id, { [field]: value })
+        if (!result.success) {
+          console.error('Failed to update persona:', result.error)
+          setError(`Failed to save changes: ${result.error}`)
+          // Revert to server state on failure
+          setPersonas(personaService.current.getPersonas())
+        }
+      } catch (error) {
+        console.error('Error updating persona:', error)
+        setError('Failed to save changes')
         setPersonas(personaService.current.getPersonas())
       }
       updateTimeouts.current.delete(timeoutKey)
-    }, 1000)
+    }, 1000) // 1 second debounce
 
     updateTimeouts.current.set(timeoutKey, newTimeout)
   }
 
-  // Remove persona (unchanged)
+  // Remove persona
   const removePersona = async (id: string) => {
     const result = await personaService.current.removePersona(id)
     if (result.success) {
@@ -158,6 +223,21 @@ export default function SetupIdentityPage() {
     }
   }
 
+  // ✅ Enhanced clear chat history with conversation completion
+  const clearChatHistory = async () => {
+    setLoading(true)
+    try {
+      await chatService.current.clearMessages()
+      setChatMessages(chatService.current.getMessages())
+    } catch (error) {
+      console.error('Failed to clear chat history:', error)
+      setError('Failed to clear chat history')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Loading state
   if (authLoading || !mounted || initializing) {
     return (
       <main className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
@@ -173,32 +253,59 @@ export default function SetupIdentityPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-4">
-      {/* ✅ Enhanced Auth Status Banner with Sync Info */}
+      {/* ✅ Enhanced status banner with chat sync info */}
       {user ? (
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className={`w-3 h-3 rounded-full mr-2 ${
-                syncStatus.hasPendingChanges ? 'bg-yellow-500' : 'bg-green-500'
-              }`}></div>
-              <span className="text-blue-800">
-                {syncStatus.hasPendingChanges ? 'Syncing...' : 'Cloud synced'}
-              </span>
+            <div className="flex items-center space-x-4">
+              {/* Persona sync status */}
+              <div className="flex items-center">
+                <div className={`w-3 h-3 rounded-full mr-2 ${
+                  syncStatus.hasPendingChanges ? 'bg-yellow-500' : 'bg-green-500'
+                }`}></div>
+                <span className="text-blue-800 text-sm">
+                  Personas: {syncStatus.hasPendingChanges ? 'Syncing...' : 'Synced'}
+                </span>
+              </div>
+              
+              {/* ✅ Chat sync status */}
+              <div className="flex items-center">
+                <div className={`w-3 h-3 rounded-full mr-2 ${
+                  !chatSyncStatus.isOnline ? 'bg-red-500' : 
+                  chatSyncStatus.pendingMessages > 0 ? 'bg-yellow-500' : 'bg-green-500'
+                }`}></div>
+                <span className="text-blue-800 text-sm">
+                  Chat: {!chatSyncStatus.isOnline ? 'Offline' : 
+                         chatSyncStatus.pendingMessages > 0 ? `${chatSyncStatus.pendingMessages} pending` : 'Synced'}
+                </span>
+              </div>
+              
               {syncStatus.lastSyncTime && (
-                <span className="text-blue-600 text-sm ml-2">
+                <span className="text-blue-600 text-xs">
                   Last sync: {syncStatus.lastSyncTime.toLocaleTimeString()}
                 </span>
               )}
             </div>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={handleManualSync}
-              disabled={loading}
-              className="text-blue-800 border-blue-400 hover:bg-blue-100"
-            >
-              {loading ? 'Syncing...' : 'Force Sync'}
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={clearChatHistory}
+                disabled={loading}
+                className="text-blue-800 border-blue-400 hover:bg-blue-100"
+              >
+                {loading ? 'Clearing...' : 'Clear Chat'}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleManualSync}
+                disabled={loading}
+                className="text-blue-800 border-blue-400 hover:bg-blue-100"
+              >
+                {loading ? 'Syncing...' : 'Force Sync'}
+              </Button>
+            </div>
           </div>
         </div>
       ) : (
@@ -208,7 +315,7 @@ export default function SetupIdentityPage() {
               <svg className="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
-              <span className="text-yellow-800">Local storage only - personas not backed up</span>
+              <span className="text-yellow-800">Local storage only - data not backed up</span>
             </div>
             <a 
               href="/login" 
@@ -241,18 +348,29 @@ export default function SetupIdentityPage() {
       )}
 
       <div className="flex gap-6">
-        {/* Chat Panel - Enhanced with sync status */}
+        {/* Chat Panel */}
         <div className="w-1/3 bg-white p-4 rounded-xl shadow h-[80vh] flex flex-col">
           <div className="mb-4 pb-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <div className={`w-3 h-3 rounded-full mr-2 ${
-                  user ? (syncStatus.hasPendingChanges ? 'bg-yellow-500' : 'bg-green-500') : 'bg-gray-400'
+                  !chatSyncStatus.isOnline ? 'bg-red-500' :
+                  user ? (chatSyncStatus.pendingMessages > 0 ? 'bg-yellow-500' : 'bg-green-500') : 'bg-gray-400'
                 }`}></div>
                 <span className="text-sm text-gray-600">
-                  {user ? (syncStatus.hasPendingChanges ? 'Syncing' : 'Synced') : 'Local only'}
+                  {!chatSyncStatus.isOnline ? 'Offline' :
+                   user ? (chatSyncStatus.pendingMessages > 0 ? `${chatSyncStatus.pendingMessages} pending` : 'Cloud synced') : 'Local only'}
+                </span>
+                <span className="text-xs text-gray-400 ml-2">
+                  ({chatMessages.length} messages)
                 </span>
               </div>
+              {/* ✅ Show conversation ID for debugging */}
+              {chatSyncStatus.conversationId && (
+                <span className="text-xs text-gray-400">
+                  ID: {chatSyncStatus.conversationId.slice(0, 8)}...
+                </span>
+              )}
               {!user && (
                 <a 
                   href="/login" 
@@ -264,7 +382,7 @@ export default function SetupIdentityPage() {
             </div>
           </div>
 
-          {/* Chat messages - unchanged */}
+          {/* Chat messages */}
           <div className="flex-1 overflow-y-auto mb-4 space-y-3">
             {chatMessages.map((msg) => (
               <div
@@ -277,6 +395,13 @@ export default function SetupIdentityPage() {
               >
                 <div className="text-xs text-gray-500 mb-1">
                   {msg.from === "user" ? "You" : "Coach"}
+                  <span className="ml-1">
+                    {msg.timestamp.toLocaleTimeString()}
+                  </span>
+                  {/* ✅ Show sync status per message */}
+                  {chatSyncStatus.pendingMessages > 0 && (
+                    <span className="ml-1 text-yellow-600">●</span>
+                  )}
                 </div>
                 <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
               </div>
@@ -289,7 +414,7 @@ export default function SetupIdentityPage() {
             )}
           </div>
 
-          {/* Chat input - unchanged */}
+          {/* Chat input */}
           <div className="flex gap-2">
             <Input
               placeholder="Describe yourself, your roles, your aspirations..."
@@ -314,7 +439,7 @@ export default function SetupIdentityPage() {
           </div>
         </div>
 
-        {/* Personas Panel - Enhanced with better sync indicators */}
+        {/* Personas Panel - unchanged */}
         <div className="w-2/3 bg-white rounded-xl shadow p-6 h-[80vh] overflow-y-auto">
           <div className="mb-6 flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">Your Personas</h2>
@@ -334,7 +459,7 @@ export default function SetupIdentityPage() {
             </div>
           </div>
           
-          {/* Personas grid - unchanged */}
+          {/* Personas grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {personas.map(persona => (
               <Card key={persona.id} className="bg-gradient-to-br from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 transition-all duration-200 border-gray-200">
@@ -370,7 +495,7 @@ export default function SetupIdentityPage() {
             ))}
           </div>
           
-          {/* Empty state - unchanged */}
+          {/* Empty state */}
           {personas.length === 0 && (
             <div className="text-center text-gray-500 mt-12">
               <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">

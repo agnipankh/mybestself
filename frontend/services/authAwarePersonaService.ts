@@ -204,6 +204,15 @@ export class AuthAwarePersonaService {
   }
 
   /**
+   * Check if a persona ID looks like a backend ID (UUID) vs local ID
+   */
+  private isBackendId(id: string): boolean {
+    // Backend IDs are UUIDs, local IDs start with 'persona-'
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    return uuidRegex.test(id)
+  }
+
+  /**
    * Sync current personas to cloud
    */
   private async syncToCloud(): Promise<PersonaServiceResult> {
@@ -225,7 +234,7 @@ export class AuthAwarePersonaService {
         const cloudPersona = cloudMap.get(persona.name)
         
         if (cloudPersona) {
-          // Update existing
+          // Update existing - but only if our version is newer
           if (persona.updatedAt.getTime() > new Date(cloudPersona.updated_at).getTime()) {
             await apiClient.updatePersona(
               cloudPersona.id, 
@@ -235,9 +244,11 @@ export class AuthAwarePersonaService {
           }
         } else {
           // Create new
-          await apiClient.createPersona(
+          const backendPersona = await apiClient.createPersona(
             PersonaMapper.toBackendCreate(persona, this.user.id)
           )
+          // Update local persona with the backend ID
+          persona.id = backendPersona.id
           console.log('✨ Created cloud persona:', persona.name)
         }
       }
@@ -246,7 +257,7 @@ export class AuthAwarePersonaService {
       const localNames = new Set(this.personas.map(p => p.name))
       for (const cloudPersona of cloudPersonas) {
         if (!localNames.has(cloudPersona.label)) {
-          await apiClient.deletePersona(this.user.id, cloudPersona.label)
+          await apiClient.deletePersonaById(cloudPersona.id)
           console.log('🗑️ Deleted cloud persona:', cloudPersona.label)
         }
       }
@@ -334,7 +345,7 @@ export class AuthAwarePersonaService {
   }
 
   /**
-   * Remove a persona
+   * Remove a persona - handles both local and cloud deletion intelligently
    */
   async removePersona(id: string): Promise<PersonaServiceResult> {
     const index = this.personas.findIndex(p => p.id === id)
@@ -342,15 +353,33 @@ export class AuthAwarePersonaService {
       return { success: false, error: 'Persona not found' }
     }
 
+    const persona = this.personas[index]
+    
+    // Remove from local array first
     this.personas.splice(index, 1)
     this.pendingChanges = true
     
-    // Immediate sync for deletions
+    // If we're authenticated, try to delete from cloud
     if (this.user) {
-      await this.syncToCloud()
-    } else {
-      this.saveToLocal()
+      try {
+        if (this.isBackendId(persona.id)) {
+          // This persona has a backend ID, delete by ID
+          console.log('🗑️ Deleting persona from cloud by ID:', persona.id)
+          await apiClient.deletePersonaById(persona.id)
+        } else {
+          // This is a local ID, delete by user ID + label
+          console.log('🗑️ Deleting persona from cloud by label:', persona.name)
+          await apiClient.deletePersona(this.user.id, persona.name)
+        }
+        console.log('✅ Successfully deleted persona from cloud:', persona.name)
+      } catch (error) {
+        console.error('❌ Failed to delete from cloud:', error)
+        // Continue anyway - the periodic sync will handle cleanup
+      }
     }
+    
+    // Always save to local storage
+    this.saveToLocal()
     
     return { success: true }
   }
