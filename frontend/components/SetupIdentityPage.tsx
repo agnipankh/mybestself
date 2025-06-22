@@ -1,4 +1,4 @@
-// components/SetupIdentityPage.tsx - Updated with database persistence
+// components/SetupIdentityPage.tsx - Updated with markdown rendering
 "use client"
 
 import { useState, useRef, useEffect } from "react"
@@ -6,15 +6,15 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { AuthAwarePersonaService } from '../services/AuthAwarePersonaService'
-import { ChatService } from '@/services/chatService' // ✅ Enhanced import
+import { ChatService } from '@/services/chatService'
 import { Persona } from '../types/persona'
 import { ChatMessage } from '../types/chat'
 import { useAuth } from '@/components/AuthGuard'
+import ReactMarkdown from 'react-markdown'
 
 export default function SetupIdentityPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   
-  // ✅ Enhanced service initialization
   const personaService = useRef(new AuthAwarePersonaService(9))
   const chatService = useRef(new ChatService({
     apiEndpoint: '/api/openai-chat',
@@ -31,14 +31,12 @@ export default function SetupIdentityPage() {
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   
-  // ✅ Enhanced sync status tracking
   const [syncStatus, setSyncStatus] = useState({
     isAuthenticated: false,
     lastSyncTime: null as Date | null,
     hasPendingChanges: false
   })
 
-  // ✅ Add chat sync status
   const [chatSyncStatus, setChatSyncStatus] = useState({
     isOnline: true,
     conversationId: null as string | null,
@@ -47,12 +45,12 @@ export default function SetupIdentityPage() {
   })
 
   const updateTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const chatMessagesRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // ✅ Update sync status periodically (for personas)
   useEffect(() => {
     const updateSyncStatus = () => {
       setSyncStatus(personaService.current.getSyncStatus())
@@ -64,7 +62,6 @@ export default function SetupIdentityPage() {
     return () => clearInterval(interval)
   }, [])
 
-  // ✅ Update chat sync status periodically
   useEffect(() => {
     const updateChatSyncStatus = () => {
       setChatSyncStatus(chatService.current.getSyncStatus())
@@ -76,7 +73,28 @@ export default function SetupIdentityPage() {
     return () => clearInterval(interval)
   }, [])
 
-  // ✅ Enhanced initialization with chat service
+  // Auto-scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    if (chatMessagesRef.current) {
+      const scrollElement = chatMessagesRef.current
+      // Use smooth scrolling for better UX
+      scrollElement.scrollTo({
+        top: scrollElement.scrollHeight,
+        behavior: 'smooth'
+      })
+    }
+  }, [chatMessages, loading]) // Scroll when messages change or loading state changes
+
+  // Helper function to manually scroll to bottom (can be used for user action)
+  const scrollToBottom = () => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTo({
+        top: chatMessagesRef.current.scrollHeight,
+        behavior: 'smooth'
+      })
+    }
+  }
+
   useEffect(() => {
     if (!mounted || authLoading) return
 
@@ -85,7 +103,6 @@ export default function SetupIdentityPage() {
       setError(null)
       
       try {
-        // Initialize persona service
         const personaResult = await personaService.current.initialize()
         
         if (personaResult.success && personaResult.data) {
@@ -95,12 +112,10 @@ export default function SetupIdentityPage() {
           setPersonas(personaService.current.getPersonas())
         }
 
-        // ✅ Initialize chat service with user context
         if (user?.id) {
           await chatService.current.initialize(user.id)
         }
         
-        // Load initial chat messages
         setChatMessages(chatService.current.getMessages())
         
       } catch (error: any) {
@@ -114,7 +129,6 @@ export default function SetupIdentityPage() {
     initializeServices()
   }, [mounted, authLoading, user?.id])
 
-  // ✅ Enhanced message sending with database persistence
   const sendMessage = async () => {
     if (!userInput.trim()) return
 
@@ -122,31 +136,28 @@ export default function SetupIdentityPage() {
     setError(null)
     
     try {
-      // ✅ Use enhanced ChatService with automatic persistence
       const result = await chatService.current.sendMessage(userInput)
       setUserInput("")
       setChatMessages(chatService.current.getMessages())
 
-      if (result.success && result.coachReply) {
-        // Parse persona updates using the improved method
-        const updates = chatService.current.parsePersonaUpdates(result.coachReply)
-        
-        if (updates.length > 0) {
-          console.log('Applying persona updates:', updates)
-          
-          // Convert to the format expected by PersonaService
-          const personaUpdates = updates.map(update => ({
-            id: update.previousName ? 
-              personas.find(p => p.name === update.previousName)?.id : 
-              undefined,
-            name: update.name,
-            northStar: update.northStar,
-            action: update.action
-          }))
+      // Force scroll to bottom after sending message
+      setTimeout(() => scrollToBottom(), 100)
 
+      if (result.success && result.coachReply) {
+        if (result.personaActions && result.personaActions.length > 0) {
+          console.log('Applying persona actions:', result.personaActions)
+                 
+          const personaUpdates = result.personaActions.map(action => ({
+            id: action.id,
+            name: action.name,
+            northStar: action.northStar,
+            action: action.type,
+            previousName: action.previousName
+          }))
+          
           const updatedPersonas = await personaService.current.applyUpdates(personaUpdates)
           setPersonas(updatedPersonas)
-        }
+        } 
       } else if (!result.success) {
         setError(result.error || 'Failed to get response from coach')
       }
@@ -158,7 +169,6 @@ export default function SetupIdentityPage() {
     }
   }
 
-  // ✅ Manual sync handler
   const handleManualSync = async () => {
     if (!user) return
     
@@ -178,28 +188,23 @@ export default function SetupIdentityPage() {
     }
   }
 
-  // Enhanced persona update with debouncing
   const updatePersona = (id: string, field: 'name' | 'northStar', value: string) => {
-    // Optimistic update for immediate UI feedback
     setPersonas(prev => prev.map(p => 
       p.id === id ? { ...p, [field]: value } : p
     ))
 
-    // Clear existing timeout for this field
     const timeoutKey = `${id}-${field}`
     const existingTimeout = updateTimeouts.current.get(timeoutKey)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
     }
 
-    // Set new timeout for API call
     const newTimeout = setTimeout(async () => {
       try {
         const result = await personaService.current.updatePersona(id, { [field]: value })
         if (!result.success) {
           console.error('Failed to update persona:', result.error)
           setError(`Failed to save changes: ${result.error}`)
-          // Revert to server state on failure
           setPersonas(personaService.current.getPersonas())
         }
       } catch (error) {
@@ -208,12 +213,11 @@ export default function SetupIdentityPage() {
         setPersonas(personaService.current.getPersonas())
       }
       updateTimeouts.current.delete(timeoutKey)
-    }, 1000) // 1 second debounce
+    }, 1000)
 
     updateTimeouts.current.set(timeoutKey, newTimeout)
   }
 
-  // Remove persona
   const removePersona = async (id: string) => {
     const result = await personaService.current.removePersona(id)
     if (result.success) {
@@ -223,7 +227,6 @@ export default function SetupIdentityPage() {
     }
   }
 
-  // ✅ Enhanced clear chat history with conversation completion
   const clearChatHistory = async () => {
     setLoading(true)
     try {
@@ -235,6 +238,42 @@ export default function SetupIdentityPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Custom markdown components for styling
+  const MarkdownComponents = {
+    // Style bold text
+    strong: ({ children }: any) => (
+      <strong className="font-semibold text-gray-900">{children}</strong>
+    ),
+    // Style italic text
+    em: ({ children }: any) => (
+      <em className="italic text-gray-700">{children}</em>
+    ),
+    // Style lists
+    ul: ({ children }: any) => (
+      <ul className="list-none space-y-1 my-2">{children}</ul>
+    ),
+    li: ({ children }: any) => (
+      <li className="flex items-start">
+        <span className="text-blue-500 mr-2">•</span>
+        <span>{children}</span>
+      </li>
+    ),
+    // Style paragraphs
+    p: ({ children }: any) => (
+      <p className="mb-2 last:mb-0">{children}</p>
+    ),
+    // Style headings
+    h1: ({ children }: any) => (
+      <h1 className="text-lg font-bold text-gray-900 mb-2">{children}</h1>
+    ),
+    h2: ({ children }: any) => (
+      <h2 className="text-base font-semibold text-gray-900 mb-2">{children}</h2>
+    ),
+    h3: ({ children }: any) => (
+      <h3 className="text-sm font-semibold text-gray-900 mb-1">{children}</h3>
+    ),
   }
 
   // Loading state
@@ -253,12 +292,11 @@ export default function SetupIdentityPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-4">
-      {/* ✅ Enhanced status banner with chat sync info */}
+      {/* Status banner */}
       {user ? (
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              {/* Persona sync status */}
               <div className="flex items-center">
                 <div className={`w-3 h-3 rounded-full mr-2 ${
                   syncStatus.hasPendingChanges ? 'bg-yellow-500' : 'bg-green-500'
@@ -268,7 +306,6 @@ export default function SetupIdentityPage() {
                 </span>
               </div>
               
-              {/* ✅ Chat sync status */}
               <div className="flex items-center">
                 <div className={`w-3 h-3 rounded-full mr-2 ${
                   !chatSyncStatus.isOnline ? 'bg-red-500' : 
@@ -348,7 +385,7 @@ export default function SetupIdentityPage() {
       )}
 
       <div className="flex gap-6">
-        {/* Chat Panel */}
+        {/* Chat Panel - Updated with markdown rendering */}
         <div className="w-1/3 bg-white p-4 rounded-xl shadow h-[80vh] flex flex-col">
           <div className="mb-4 pb-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -365,7 +402,6 @@ export default function SetupIdentityPage() {
                   ({chatMessages.length} messages)
                 </span>
               </div>
-              {/* ✅ Show conversation ID for debugging */}
               {chatSyncStatus.conversationId && (
                 <span className="text-xs text-gray-400">
                   ID: {chatSyncStatus.conversationId.slice(0, 8)}...
@@ -382,8 +418,11 @@ export default function SetupIdentityPage() {
             </div>
           </div>
 
-          {/* Chat messages */}
-          <div className="flex-1 overflow-y-auto mb-4 space-y-3">
+          {/* Chat messages - NOW WITH MARKDOWN RENDERING! */}
+          <div 
+            ref={chatMessagesRef}
+            className="flex-1 overflow-y-auto mb-4 space-y-3"
+          >
             {chatMessages.map((msg) => (
               <div
                 key={msg.id}
@@ -398,12 +437,24 @@ export default function SetupIdentityPage() {
                   <span className="ml-1">
                     {msg.timestamp.toLocaleTimeString()}
                   </span>
-                  {/* ✅ Show sync status per message */}
                   {chatSyncStatus.pendingMessages > 0 && (
                     <span className="ml-1 text-yellow-600">●</span>
                   )}
                 </div>
-                <div className="text-sm whitespace-pre-wrap">{msg.text}</div>
+                {/* ✅ THE KEY CHANGE: Use ReactMarkdown instead of plain text */}
+                <div className="text-sm">
+                  {msg.from === "user" ? (
+                    // Keep user messages as plain text for simplicity
+                    <div className="whitespace-pre-wrap">{msg.text}</div>
+                  ) : (
+                    // Render coach messages as markdown
+                    <div className="prose prose-sm max-w-none">
+                      <ReactMarkdown components={MarkdownComponents}>
+                        {msg.text}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
             {loading && (

@@ -1,4 +1,6 @@
 // services/chatService.ts - Enhanced with database persistence
+
+import { ConversationManager } from './conversation/ConversationManager'
 import { ChatMessage } from '@/types/chat'
 
 export type ConversationMode = 'goals' | 'habits' | 'reflection' | 'general' | 'persona_discovery'
@@ -46,6 +48,7 @@ export interface BackendConversation {
  */
 export class ChatService {
   private messages: ChatMessage[] = []
+  private conversationManager: ConversationManager
   private apiEndpoint: string
   private maxMessages: number
   private enableLogging: boolean
@@ -62,6 +65,7 @@ export class ChatService {
     this.maxMessages = config.maxMessages || 100
     this.enableLogging = config.enableLogging || false
     this.backendUrl = config.backendUrl || 'http://localhost:8000'
+    this.conversationManager = new ConversationManager(this.apiEndpoint)
     
     // Don't initialize with welcome message yet - load from backend first
   }
@@ -208,6 +212,7 @@ You may return multiple personas in one message. Use only this exact format with
   async sendMessage(userMessage: string): Promise<{
     success: boolean
     coachReply?: string
+    personaActions?: any[]
     error?: string
   }> {
     if (!userMessage.trim()) {
@@ -227,13 +232,14 @@ You may return multiple personas in one message. Use only this exact format with
     await this.saveMessageToBackend(userMsg)
 
     try {
-      const coachReply = await this.getCoachResponse(userMessage)
-      
+      // Use the enhanced ConversationManager
+      const result = await this.conversationManager.processMessage(userMessage)
+
       // Add coach response to local history
       const coachMsg: ChatMessage = {
         id: this.generateId(),
         from: 'coach',
-        text: coachReply,
+        text: result.userResponse,
         timestamp: new Date()
       }
       this.addMessage(coachMsg)
@@ -241,11 +247,16 @@ You may return multiple personas in one message. Use only this exact format with
       // Save coach message to backend
       await this.saveMessageToBackend(coachMsg)
 
-      this.log('Message sent and saved successfully', { userMessage, coachReply })
+      this.log('Message sent and saved successfully', { 
+        userMessage, 
+        coachReply: result.userResponse,
+        personaActionsCount: result.personaActions?.length || 0
+      })
       
       return { 
         success: true, 
-        coachReply 
+        coachReply: result.userResponse,
+        personaActions: result.personaActions // ✅ This will now include refinement actions
       }
 
     } catch (error: any) {
@@ -340,7 +351,7 @@ You may return multiple personas in one message. Use only this exact format with
   }
 
   /**
-   * Get response from the AI coach (unchanged)
+   * Get response from the AI coach (legacy method - now using ConversationManager)
    */
   private async getCoachResponse(userMessage: string): Promise<string> {
     const apiMessages = [
@@ -478,7 +489,7 @@ You may return multiple personas in one message. Use only this exact format with
   }
 
   // ==========================================
-  // PERSONA PARSING (Unchanged)
+  // PERSONA PARSING (Legacy - now handled by agents)
   // ==========================================
 
   parsePersonaUpdates(coachReply: string): Array<{
