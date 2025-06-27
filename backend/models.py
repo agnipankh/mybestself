@@ -20,7 +20,8 @@ class User(Base):
 
     personas = relationship("Persona", back_populates="user")
     magic_links = relationship("MagicLink", back_populates="user")
-    conversations = relationship("Conversation", back_populates="user") 
+    conversations = relationship("Conversation", back_populates="user")
+    goals = relationship("Goal", back_populates="user") 
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -81,7 +82,8 @@ class Goal(Base):
     __tablename__ = 'goals'
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    persona_id = Column(UUID(as_uuid=True), ForeignKey('personas.id'), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False)
+    persona_id = Column(UUID(as_uuid=True), ForeignKey('personas.id'), nullable=True)
     
     # Core goal fields
     name = Column(String, nullable=False)
@@ -99,5 +101,6 @@ class Goal(Base):
     review_notes = Column(Text)
     
     # Relationships
+    user = relationship("User")
     persona = relationship("Persona", back_populates="goals")
 

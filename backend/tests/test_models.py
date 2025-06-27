@@ -272,10 +272,11 @@ class TestModelConstraints:
 class TestGoalModel:
     """Test Goal model functionality"""
     
-    def test_goal_creation(self, test_db, created_persona):
-        """Test creating a goal with required fields"""
+    def test_goal_creation_with_persona(self, test_db, created_persona):
+        """Test creating a goal with persona"""
         review_date = datetime.utcnow() + timedelta(days=7)
         goal = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Complete project milestone",
             acceptance_criteria="All tasks completed and reviewed",
@@ -287,6 +288,7 @@ class TestGoalModel:
         
         assert goal.id is not None
         assert isinstance(goal.id, UUID)
+        assert goal.user_id == created_persona.user_id
         assert goal.persona_id == created_persona.id
         assert goal.name == "Complete project milestone"
         assert goal.acceptance_criteria == "All tasks completed and reviewed"
@@ -300,6 +302,7 @@ class TestGoalModel:
         """Test creating a goal with only required fields"""
         review_date = datetime.utcnow() + timedelta(days=7)
         goal = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Minimal goal",
             review_date=review_date
@@ -309,6 +312,7 @@ class TestGoalModel:
         test_db.refresh(goal)
         
         assert goal.id is not None
+        assert goal.user_id == created_persona.user_id
         assert goal.persona_id == created_persona.id
         assert goal.name == "Minimal goal"
         assert goal.acceptance_criteria is None
@@ -320,6 +324,7 @@ class TestGoalModel:
         """Test the relationship between Goal and Persona"""
         review_date = datetime.utcnow() + timedelta(days=7)
         goal = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Relationship test goal",
             review_date=review_date
@@ -337,8 +342,31 @@ class TestGoalModel:
         assert goal in created_persona.goals
         assert len(created_persona.goals) >= 1
     
-    def test_goal_without_persona_id_fails(self, test_db):
-        """Test that goal creation fails without persona_id"""
+    def test_goal_creation_without_persona(self, test_db, created_user):
+        """Test creating a goal without persona (persona_id is optional now)"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        goal = Goal(
+            user_id=created_user.id,
+            persona_id=None,
+            name="Personal goal without persona",
+            acceptance_criteria="Achieve personal growth",
+            review_date=review_date
+        )
+        test_db.add(goal)
+        test_db.commit()
+        test_db.refresh(goal)
+        
+        assert goal.id is not None
+        assert goal.user_id == created_user.id
+        assert goal.persona_id is None
+        assert goal.name == "Personal goal without persona"
+        assert goal.acceptance_criteria == "Achieve personal growth"
+        assert goal.review_date == review_date
+        assert goal.status == 'active'
+        assert goal.success_percentage == 0
+    
+    def test_goal_without_user_id_fails(self, test_db):
+        """Test that goal creation fails without user_id (required field)"""
         review_date = datetime.utcnow() + timedelta(days=7)
         goal = Goal(
             name="Orphan goal",
@@ -353,6 +381,7 @@ class TestGoalModel:
         """Test that goal creation fails without name"""
         review_date = datetime.utcnow() + timedelta(days=7)
         goal = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             review_date=review_date
         )
@@ -364,6 +393,7 @@ class TestGoalModel:
     def test_goal_without_review_date_fails(self, test_db, created_persona):
         """Test that goal creation fails without review_date"""
         goal = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="No review date goal"
         )
@@ -378,6 +408,7 @@ class TestGoalModel:
         
         # Test active status (default)
         goal1 = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Active goal",
             review_date=review_date
@@ -389,6 +420,7 @@ class TestGoalModel:
         
         # Test completed status
         goal2 = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Completed goal",
             review_date=review_date,
@@ -401,6 +433,7 @@ class TestGoalModel:
         
         # Test refined status
         goal3 = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Refined goal",
             review_date=review_date,
@@ -416,6 +449,7 @@ class TestGoalModel:
         review_date = datetime.utcnow() + timedelta(days=7)
         
         goal = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Success tracking goal",
             review_date=review_date,
@@ -432,16 +466,19 @@ class TestGoalModel:
         review_date = datetime.utcnow() + timedelta(days=7)
         
         goal1 = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="First goal",
             review_date=review_date
         )
         goal2 = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Second goal",
             review_date=review_date + timedelta(days=1)
         )
         goal3 = Goal(
+            user_id=created_persona.user_id,
             persona_id=created_persona.id,
             name="Third goal",
             review_date=review_date + timedelta(days=2)
@@ -457,3 +494,25 @@ class TestGoalModel:
         assert "First goal" in goal_names
         assert "Second goal" in goal_names
         assert "Third goal" in goal_names
+    
+    def test_goal_user_relationship(self, test_db, created_user):
+        """Test the relationship between Goal and User"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        goal = Goal(
+            user_id=created_user.id,
+            persona_id=None,
+            name="User relationship test goal",
+            review_date=review_date
+        )
+        test_db.add(goal)
+        test_db.commit()
+        test_db.refresh(goal)
+        
+        # Test forward relationship
+        assert goal.user == created_user
+        assert goal.user.id == created_user.id
+        
+        # Test reverse relationship
+        test_db.refresh(created_user)
+        assert goal in created_user.goals
+        assert len(created_user.goals) >= 1

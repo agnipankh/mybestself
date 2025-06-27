@@ -49,7 +49,8 @@ class PersonaUpdate(BaseModel):
     is_calling: Optional[bool] = None
 
 class GoalCreate(BaseModel):
-    persona_id: UUID
+    user_id: UUID
+    persona_id: Optional[UUID] = None
     name: str
     acceptance_criteria: Optional[str] = None
     review_date: datetime
@@ -475,12 +476,23 @@ def search_conversations(
 
 @app.post("/goals/")
 def create_goal(goal: GoalCreate, db: Session = Depends(get_db)):
-    """Create a new goal for a persona"""
-    persona = db.get(Persona, goal.persona_id)
-    if not persona:
-        raise HTTPException(status_code=404, detail="Persona not found")
+    """Create a new goal, optionally for a persona"""
+    # Validate user exists
+    user = db.get(User, goal.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Validate persona exists if persona_id is provided
+    if goal.persona_id is not None:
+        persona = db.get(Persona, goal.persona_id)
+        if not persona:
+            raise HTTPException(status_code=404, detail="Persona not found")
+        # Ensure persona belongs to the same user
+        if persona.user_id != goal.user_id:
+            raise HTTPException(status_code=400, detail="Persona does not belong to the specified user")
     
     db_goal = Goal(
+        user_id=goal.user_id,
         persona_id=goal.persona_id,
         name=goal.name,
         acceptance_criteria=goal.acceptance_criteria,
@@ -548,17 +560,13 @@ def delete_goal(goal_id: UUID, db: Session = Depends(get_db)):
 
 @app.get("/users/{user_id}/goals")
 def list_user_goals(user_id: UUID, db: Session = Depends(get_db)):
-    """Get all goals for all personas of a user"""
+    """Get all goals for a user, both with and without personas"""
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Get all goals across all user's personas
-    goals = []
-    for persona in user.personas:
-        goals.extend(persona.goals)
-    
-    return goals
+    # Now we can directly access all goals for this user via the relationship
+    return user.goals
 
 @app.get("/users/{user_id}/goals/due")
 def get_goals_due_for_review(user_id: UUID, db: Session = Depends(get_db)):
@@ -572,10 +580,10 @@ def get_goals_due_for_review(user_id: UUID, db: Session = Depends(get_db)):
     today = date.today()
     due_goals = []
     
-    for persona in user.personas:
-        for goal in persona.goals:
-            if goal.review_date.date() <= today and goal.status == 'active':
-                due_goals.append(goal)
+    # Check all user goals (both with and without personas)
+    for goal in user.goals:
+        if goal.review_date.date() <= today and goal.status == 'active':
+            due_goals.append(goal)
     
     return due_goals
 
