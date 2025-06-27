@@ -1,4 +1,4 @@
-// services/apiClient.ts
+// services/apiClient.ts - Updated with new conversation endpoints
 export interface BackendPersona {
   id: string
   user_id: string
@@ -16,6 +16,26 @@ export interface BackendUser {
   created_at: string
 }
 
+export interface BackendConversation {
+  id: string
+  user_id: string
+  conversation_type: string  // Updated from discussion_type
+  topic: string
+  status: string
+  tags: string[]  // New: replaces persona_id
+  messages: Array<{
+    sequence: number
+    timestamp: string
+    from: string
+    text: string
+  }>
+  key_insights: string[]
+  conversation_summary?: string
+  started_at: string
+  last_activity_at: string
+  ended_at?: string
+}
+
 export interface CreatePersonaRequest {
   user_id: string
   label: string
@@ -26,6 +46,23 @@ export interface CreatePersonaRequest {
 export interface CreateUserRequest {
   name: string
   email: string
+}
+
+export interface CreateConversationRequest {
+  user_id: string
+  conversation_type: string  // 'discovery', 'refinement', 'decision_making'
+  topic: string
+  tags?: string[]
+}
+
+export interface AddMessageRequest {
+  from_role: string  // 'user' or 'coach'
+  text: string
+}
+
+export interface CompleteConversationRequest {
+  key_insights: string[]
+  summary?: string
 }
 
 class ApiClient {
@@ -137,42 +174,137 @@ class ApiClient {
   }
 
   // ============================================
-  // CONVERSATION OPERATIONS
+  // CONVERSATION OPERATIONS - NEW USER-CENTRIC API
   // ============================================
 
-  async createConversation(data: {
-    persona_id: string
-    discussion_type: string
-    topic: string
-  }): Promise<any> {
-    return this.request('/conversations/', {
+  /**
+   * Create a new conversation
+   */
+  async createConversation(data: CreateConversationRequest): Promise<BackendConversation> {
+    return this.request<BackendConversation>('/conversations/', {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
-  async addMessageToConversation(conversationId: string, message: {
-    from_role: string
-    text: string
-  }): Promise<any> {
+  /**
+   * Add a message to a conversation
+   */
+  async addMessageToConversation(conversationId: string, message: AddMessageRequest): Promise<any> {
     return this.request(`/conversations/${conversationId}/messages`, {
       method: 'POST',
       body: JSON.stringify(message),
     })
   }
 
-  async completeConversation(conversationId: string, completion: {
-    key_insights: string[]
-    summary?: string
-  }): Promise<any> {
+  /**
+   * Complete a conversation with insights
+   */
+  async completeConversation(conversationId: string, completion: CompleteConversationRequest): Promise<any> {
     return this.request(`/conversations/${conversationId}/complete`, {
       method: 'PATCH',
       body: JSON.stringify(completion),
     })
   }
 
-  async getPersonaConversations(personaId: string): Promise<any[]> {
-    return this.request(`/personas/${personaId}/conversations`)
+  /**
+   * Get all conversations for a user with optional filtering
+   */
+  async getUserConversations(
+    userId: string,
+    options: {
+      conversation_type?: string
+      tag?: string
+      limit?: number
+      offset?: number
+    } = {}
+  ): Promise<{ conversations: BackendConversation[], total_count: number }> {
+    const params = new URLSearchParams()
+    
+    if (options.conversation_type) params.append('conversation_type', options.conversation_type)
+    if (options.tag) params.append('tag', options.tag)
+    if (options.limit) params.append('limit', options.limit.toString())
+    if (options.offset) params.append('offset', options.offset.toString())
+    
+    const queryString = params.toString()
+    const url = queryString ? `/users/${userId}/conversations?${queryString}` : `/users/${userId}/conversations`
+    
+    return this.request<{ conversations: BackendConversation[], total_count: number }>(url)
+  }
+
+  /**
+   * Get discovery conversations for a user (shorthand)
+   */
+  async getDiscoveryConversations(userId: string, limit?: number): Promise<{ conversations: BackendConversation[] }> {
+    const params = limit ? `?limit=${limit}` : ''
+    return this.request<{ conversations: BackendConversation[] }>(`/users/${userId}/conversations/discovery${params}`)
+  }
+
+  /**
+   * Get conversations that discuss a specific persona
+   */
+  async getConversationsByPersona(userId: string, personaName: string, limit?: number): Promise<{ conversations: BackendConversation[] }> {
+    const params = limit ? `?limit=${limit}` : ''
+    return this.request<{ conversations: BackendConversation[] }>(`/users/${userId}/conversations/by-persona/${encodeURIComponent(personaName)}${params}`)
+  }
+
+  /**
+   * Search conversations by content
+   */
+  async searchConversations(
+    userId: string,
+    query: string,
+    conversationType?: string,
+    limit?: number
+  ): Promise<{ conversations: BackendConversation[], search_query: string, total_results: number }> {
+    const params = new URLSearchParams({ q: query })
+    if (conversationType) params.append('conversation_type', conversationType)
+    if (limit) params.append('limit', limit.toString())
+    
+    return this.request<{ conversations: BackendConversation[], search_query: string, total_results: number }>(
+      `/users/${userId}/conversations/search?${params.toString()}`
+    )
+  }
+
+  /**
+   * Add tags to a conversation (you'll need to implement this endpoint in backend)
+   */
+  async addTagsToConversation(conversationId: string, tags: string[]): Promise<BackendConversation> {
+    return this.request<BackendConversation>(`/conversations/${conversationId}/tags`, {
+      method: 'PATCH',
+      body: JSON.stringify({ add_tags: tags }),
+    })
+  }
+
+  /**
+   * Update conversation tags (replace all tags)
+   */
+  async updateConversationTags(conversationId: string, tags: string[]): Promise<BackendConversation> {
+    return this.request<BackendConversation>(`/conversations/${conversationId}/tags`, {
+      method: 'PUT',
+      body: JSON.stringify({ tags }),
+    })
+  }
+
+  /**
+   * Get a specific conversation by ID
+   */
+  async getConversation(conversationId: string): Promise<BackendConversation> {
+    return this.request<BackendConversation>(`/conversations/${conversationId}`)
+  }
+
+  // ============================================
+  // LEGACY PERSONA CONVERSATION METHODS (for backward compatibility)
+  // ============================================
+
+  /**
+   * @deprecated Use getUserConversations with tag filter instead
+   */
+  async getPersonaConversations(personaId: string): Promise<BackendConversation[]> {
+    console.warn('getPersonaConversations is deprecated. Use getUserConversations with tag filter instead.')
+    // This might not work with the new backend structure
+    // You could implement this to search for conversations with the persona name as a tag
+    throw new Error('getPersonaConversations is deprecated. Use getUserConversations with tag filter instead.')
   }
 }
 

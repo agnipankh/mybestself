@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timedelta
 from uuid import UUID
-from models import User, Persona, MagicLink
+from models import User, Persona, MagicLink, Goal
 
 class TestUserModel:
     """Test User model functionality"""
@@ -267,3 +267,193 @@ class TestModelConstraints:
             )
             test_db.add(magic_link)
             test_db.commit()
+
+
+class TestGoalModel:
+    """Test Goal model functionality"""
+    
+    def test_goal_creation(self, test_db, created_persona):
+        """Test creating a goal with required fields"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        goal = Goal(
+            persona_id=created_persona.id,
+            name="Complete project milestone",
+            acceptance_criteria="All tasks completed and reviewed",
+            review_date=review_date
+        )
+        test_db.add(goal)
+        test_db.commit()
+        test_db.refresh(goal)
+        
+        assert goal.id is not None
+        assert isinstance(goal.id, UUID)
+        assert goal.persona_id == created_persona.id
+        assert goal.name == "Complete project milestone"
+        assert goal.acceptance_criteria == "All tasks completed and reviewed"
+        assert goal.review_date == review_date
+        assert goal.status == 'active'  # Default value
+        assert goal.success_percentage == 0  # Default value
+        assert goal.review_notes is None
+        assert goal.created_at is not None
+    
+    def test_goal_minimal_creation(self, test_db, created_persona):
+        """Test creating a goal with only required fields"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        goal = Goal(
+            persona_id=created_persona.id,
+            name="Minimal goal",
+            review_date=review_date
+        )
+        test_db.add(goal)
+        test_db.commit()
+        test_db.refresh(goal)
+        
+        assert goal.id is not None
+        assert goal.persona_id == created_persona.id
+        assert goal.name == "Minimal goal"
+        assert goal.acceptance_criteria is None
+        assert goal.review_date == review_date
+        assert goal.status == 'active'
+        assert goal.success_percentage == 0
+    
+    def test_goal_persona_relationship(self, test_db, created_persona):
+        """Test the relationship between Goal and Persona"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        goal = Goal(
+            persona_id=created_persona.id,
+            name="Relationship test goal",
+            review_date=review_date
+        )
+        test_db.add(goal)
+        test_db.commit()
+        test_db.refresh(goal)
+        
+        # Test forward relationship
+        assert goal.persona == created_persona
+        assert goal.persona.id == created_persona.id
+        
+        # Test reverse relationship
+        test_db.refresh(created_persona)
+        assert goal in created_persona.goals
+        assert len(created_persona.goals) >= 1
+    
+    def test_goal_without_persona_id_fails(self, test_db):
+        """Test that goal creation fails without persona_id"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        goal = Goal(
+            name="Orphan goal",
+            review_date=review_date
+        )
+        test_db.add(goal)
+        
+        with pytest.raises(Exception):  # Should raise integrity error
+            test_db.commit()
+    
+    def test_goal_without_name_fails(self, test_db, created_persona):
+        """Test that goal creation fails without name"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        goal = Goal(
+            persona_id=created_persona.id,
+            review_date=review_date
+        )
+        test_db.add(goal)
+        
+        with pytest.raises(Exception):  # Should raise integrity error
+            test_db.commit()
+    
+    def test_goal_without_review_date_fails(self, test_db, created_persona):
+        """Test that goal creation fails without review_date"""
+        goal = Goal(
+            persona_id=created_persona.id,
+            name="No review date goal"
+        )
+        test_db.add(goal)
+        
+        with pytest.raises(Exception):  # Should raise integrity error
+            test_db.commit()
+    
+    def test_goal_status_values(self, test_db, created_persona):
+        """Test different goal status values"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        
+        # Test active status (default)
+        goal1 = Goal(
+            persona_id=created_persona.id,
+            name="Active goal",
+            review_date=review_date
+        )
+        test_db.add(goal1)
+        test_db.commit()
+        test_db.refresh(goal1)
+        assert goal1.status == 'active'
+        
+        # Test completed status
+        goal2 = Goal(
+            persona_id=created_persona.id,
+            name="Completed goal",
+            review_date=review_date,
+            status='completed'
+        )
+        test_db.add(goal2)
+        test_db.commit()
+        test_db.refresh(goal2)
+        assert goal2.status == 'completed'
+        
+        # Test refined status
+        goal3 = Goal(
+            persona_id=created_persona.id,
+            name="Refined goal",
+            review_date=review_date,
+            status='refined'
+        )
+        test_db.add(goal3)
+        test_db.commit()
+        test_db.refresh(goal3)
+        assert goal3.status == 'refined'
+    
+    def test_goal_success_percentage_values(self, test_db, created_persona):
+        """Test goal success percentage field"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        
+        goal = Goal(
+            persona_id=created_persona.id,
+            name="Success tracking goal",
+            review_date=review_date,
+            success_percentage=75
+        )
+        test_db.add(goal)
+        test_db.commit()
+        test_db.refresh(goal)
+        
+        assert goal.success_percentage == 75
+    
+    def test_multiple_goals_per_persona(self, test_db, created_persona):
+        """Test that a persona can have multiple goals"""
+        review_date = datetime.utcnow() + timedelta(days=7)
+        
+        goal1 = Goal(
+            persona_id=created_persona.id,
+            name="First goal",
+            review_date=review_date
+        )
+        goal2 = Goal(
+            persona_id=created_persona.id,
+            name="Second goal",
+            review_date=review_date + timedelta(days=1)
+        )
+        goal3 = Goal(
+            persona_id=created_persona.id,
+            name="Third goal",
+            review_date=review_date + timedelta(days=2)
+        )
+        
+        test_db.add_all([goal1, goal2, goal3])
+        test_db.commit()
+        
+        test_db.refresh(created_persona)
+        assert len(created_persona.goals) == 3
+        
+        goal_names = [goal.name for goal in created_persona.goals]
+        assert "First goal" in goal_names
+        assert "Second goal" in goal_names
+        assert "Third goal" in goal_names

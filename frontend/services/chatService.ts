@@ -1,4 +1,4 @@
-// services/chatService.ts - Enhanced with database persistence
+// services/chatService.ts - Updated for user-centric conversations
 
 import { ConversationManager } from './conversation/ConversationManager'
 import { ChatMessage } from '@/types/chat'
@@ -20,11 +20,11 @@ export interface ChatServiceConfig {
 
 export interface BackendConversation {
   id: string
-  persona_id?: string
   user_id: string
-  discussion_type: string
+  conversation_type: string  // Updated from discussion_type
   topic: string
   status: string
+  tags: string[]  // New: array of tags instead of persona_id
   messages: Array<{
     sequence: number
     timestamp: string
@@ -35,16 +35,17 @@ export interface BackendConversation {
   conversation_summary?: string
   started_at: string
   last_activity_at: string
+  ended_at?: string
 }
 
 /**
- * Enhanced ChatService with database persistence
+ * Enhanced ChatService with user-centric conversation persistence
  * 
  * Key improvements:
- * 1. Persists conversations to backend database
- * 2. Loads existing conversations on initialization
- * 3. Auto-saves messages as they're sent
- * 4. Handles offline/online scenarios
+ * 1. Conversations belong to users, not personas
+ * 2. Uses tags instead of persona_id for flexible conversation categorization
+ * 3. Supports multiple personas per conversation via tags
+ * 4. Better discovery conversation handling
  */
 export class ChatService {
   private messages: ChatMessage[] = []
@@ -54,7 +55,7 @@ export class ChatService {
   private enableLogging: boolean
   private backendUrl: string
   
-  // New: Conversation persistence state
+  // Conversation persistence state
   private currentConversationId: string | null = null
   private userId: string | null = null
   private isOnline: boolean = true
@@ -66,8 +67,6 @@ export class ChatService {
     this.enableLogging = config.enableLogging || false
     this.backendUrl = config.backendUrl || 'http://localhost:8000'
     this.conversationManager = new ConversationManager(this.apiEndpoint)
-    
-    // Don't initialize with welcome message yet - load from backend first
   }
 
   // ==========================================
@@ -76,14 +75,12 @@ export class ChatService {
 
   /**
    * Initialize the chat service with a user
-   * This should be called when user logs in or when starting the app
    */
   async initialize(userId: string): Promise<void> {
     this.userId = userId
     
     try {
-      // Try to load the most recent persona discovery conversation
-      await this.loadLatestConversation()
+      await this.loadLatestDiscoveryConversation()
     } catch (error) {
       this.log('Failed to load conversation from backend, starting fresh', { error })
       this.initializeWithWelcome()
@@ -91,23 +88,26 @@ export class ChatService {
   }
 
   /**
-   * Load the most recent conversation from backend
+   * Load the most recent discovery conversation from backend
    */
-  private async loadLatestConversation(): Promise<void> {
+  private async loadLatestDiscoveryConversation(): Promise<void> {
     if (!this.userId) {
       this.initializeWithWelcome()
       return
     }
 
     try {
-      // First, try to find the most recent persona discovery conversation
-      const response = await fetch(`${this.backendUrl}/users/${this.userId}/conversations?type=persona_discovery&limit=1`)
+      // Use the new discovery conversations endpoint
+      const response = await fetch(
+        `${this.backendUrl}/users/${this.userId}/conversations/discovery?limit=1`
+      )
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
       }
 
-      const conversations = await response.json()
+      const data = await response.json()
+      const conversations = data.conversations || data // Handle both formats
       
       if (conversations && conversations.length > 0) {
         const conversation = conversations[0]
@@ -121,24 +121,25 @@ export class ChatService {
           timestamp: new Date(msg.timestamp)
         }))
         
-        this.log('Loaded existing conversation', { 
+        this.log('Loaded existing discovery conversation', { 
           conversationId: this.currentConversationId, 
-          messageCount: this.messages.length 
+          messageCount: this.messages.length,
+          tags: conversation.tags
         })
       } else {
-        // No existing conversation, start fresh
-        await this.startNewConversation()
+        // No existing discovery conversation, start fresh
+        await this.startNewDiscoveryConversation()
       }
     } catch (error) {
       this.log('Error loading conversation, starting fresh', { error })
-      await this.startNewConversation()
+      await this.startNewDiscoveryConversation()
     }
   }
 
   /**
-   * Start a new conversation in the backend
+   * Start a new discovery conversation in the backend
    */
-  private async startNewConversation(): Promise<void> {
+  private async startNewDiscoveryConversation(): Promise<void> {
     if (!this.userId) {
       this.initializeWithWelcome()
       return
@@ -150,8 +151,9 @@ export class ChatService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: this.userId,
-          discussion_type: 'persona_discovery',
-          topic: 'Discovering and defining user personas'
+          conversation_type: 'discovery',  // Updated from 'persona_discovery'
+          topic: 'Discovering and defining user personas',
+          tags: ['persona-discovery']  // Use tags instead of persona_id
         })
       })
 
@@ -167,7 +169,10 @@ export class ChatService {
       // Save the welcome message to backend
       await this.saveMessageToBackend(this.messages[0])
       
-      this.log('Started new conversation', { conversationId: this.currentConversationId })
+      this.log('Started new discovery conversation', { 
+        conversationId: this.currentConversationId,
+        tags: ['persona-discovery']
+      })
     } catch (error) {
       this.log('Failed to start backend conversation, using local only', { error })
       this.currentConversationId = null
@@ -184,30 +189,156 @@ export class ChatService {
     }]
   }
 
-  private getSystemPrompt(): ChatMessage {
-    return {
-      id: 'system',
-      from: 'system',
-      text: `You are a life coach helping a user define their major personas and associated guiding principles (North Stars).
+  // ==========================================
+  // CONVERSATION MANAGEMENT (Updated)
+  // ==========================================
+
+  /**
+   * Start a new conversation with specific type and tags
+   */
+  async startNewConversation(
+    type: 'discovery' | 'refinement' | 'decision_making' = 'discovery',
+    topic: string = 'General conversation',
+    tags: string[] = []
+  ): Promise<void> {
+    if (!this.userId) {
+      this.initializeWithWelcome()
+      return
+    }
+
+    // Complete current conversation if exists
+    if (this.currentConversationId) {
+      await this.completeCurrentConversation(['User started new conversation'])
+    }
+
+    try {
+      const response = await fetch(`${this.backendUrl}/conversations/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: this.userId,
+          conversation_type: type,
+          topic,
+          tags
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const conversation = await response.json()
+      this.currentConversationId = conversation.id
       
-Each time the user describes something about their identity, suggest one or more personas in the following format:
+      this.initializeWithWelcome()
+      await this.saveMessageToBackend(this.messages[0])
+      
+      this.log('Started new conversation', { 
+        conversationId: this.currentConversationId,
+        type,
+        tags
+      })
+    } catch (error) {
+      this.log('Failed to start backend conversation, using local only', { error })
+      this.currentConversationId = null
+      this.initializeWithWelcome()
+    }
+  }
 
-Persona: [Name] (was: [PreviousName])
-North Star: [Goal]
+  /**
+   * Add tags to current conversation (useful when personas are mentioned)
+   */
+  async addTagsToCurrentConversation(newTags: string[]): Promise<void> {
+    if (!this.currentConversationId || newTags.length === 0) return
 
-Use the (was: ...) clause only when renaming or refining an existing persona.
+    try {
+      // You'll need to add this endpoint to your backend
+      const response = await fetch(`${this.backendUrl}/conversations/${this.currentConversationId}/tags`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ add_tags: newTags })
+      })
 
-You may return multiple personas in one message. Use only this exact format with no extra commentary.`,
-      timestamp: new Date()
+      if (response.ok) {
+        this.log('Added tags to conversation', { tags: newTags })
+      }
+    } catch (error) {
+      this.log('Failed to add tags to conversation', { error, tags: newTags })
+    }
+  }
+
+  /**
+   * Get conversations by type or tags
+   */
+  async getConversations(
+    type?: 'discovery' | 'refinement' | 'decision_making',
+    tag?: string,
+    limit?: number
+  ): Promise<BackendConversation[]> {
+    if (!this.userId) return []
+
+    try {
+      let url = `${this.backendUrl}/users/${this.userId}/conversations?`
+      const params = new URLSearchParams()
+      
+      if (type) params.append('conversation_type', type)
+      if (tag) params.append('tag', tag)
+      if (limit) params.append('limit', limit.toString())
+      
+      const response = await fetch(`${url}${params.toString()}`)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      return data.conversations || data
+    } catch (error) {
+      this.log('Failed to load conversations', { error })
+      return []
+    }
+  }
+
+  /**
+   * Get conversations that discuss a specific persona
+   */
+  async getPersonaConversations(personaName: string): Promise<BackendConversation[]> {
+    return this.getConversations(undefined, personaName)
+  }
+
+  /**
+   * Search conversations by content
+   */
+  async searchConversations(
+    query: string,
+    type?: 'discovery' | 'refinement' | 'decision_making'
+  ): Promise<BackendConversation[]> {
+    if (!this.userId) return []
+
+    try {
+      let url = `${this.backendUrl}/users/${this.userId}/conversations/search?q=${encodeURIComponent(query)}`
+      if (type) url += `&conversation_type=${type}`
+      
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      return data.conversations || []
+    } catch (error) {
+      this.log('Failed to search conversations', { error })
+      return []
     }
   }
 
   // ==========================================
-  // ENHANCED MESSAGING WITH PERSISTENCE
+  // ENHANCED MESSAGING (Updated)
   // ==========================================
 
   /**
-   * Send a message with automatic backend persistence
+   * Send a message with automatic backend persistence and persona tagging
    */
   async sendMessage(userMessage: string): Promise<{
     success: boolean
@@ -247,6 +378,12 @@ You may return multiple personas in one message. Use only this exact format with
       // Save coach message to backend
       await this.saveMessageToBackend(coachMsg)
 
+      // If personas were mentioned, add them as tags to the conversation
+      if (result.personaActions && result.personaActions.length > 0) {
+        const personaTags = result.personaActions.map(action => action.name)
+        await this.addTagsToCurrentConversation(personaTags)
+      }
+
       this.log('Message sent and saved successfully', { 
         userMessage, 
         coachReply: result.userResponse,
@@ -256,7 +393,7 @@ You may return multiple personas in one message. Use only this exact format with
       return { 
         success: true, 
         coachReply: result.userResponse,
-        personaActions: result.personaActions // ✅ This will now include refinement actions
+        personaActions: result.personaActions
       }
 
     } catch (error: any) {
@@ -328,8 +465,8 @@ You may return multiple personas in one message. Use only this exact format with
     }
 
     try {
-      // Test connectivity
-      const testResponse = await fetch(`${this.backendUrl}/health`)
+      // Test connectivity with new health endpoint (you may need to add this)
+      const testResponse = await fetch(`${this.backendUrl}/users/${this.userId}/conversations?limit=1`)
       if (!testResponse.ok) throw new Error('Backend not available')
 
       this.isOnline = true
@@ -350,37 +487,8 @@ You may return multiple personas in one message. Use only this exact format with
     }
   }
 
-  /**
-   * Get response from the AI coach (legacy method - now using ConversationManager)
-   */
-  private async getCoachResponse(userMessage: string): Promise<string> {
-    const apiMessages = [
-      this.getSystemPrompt(),
-      ...this.messages.filter(m => m.from !== 'system')
-    ]
-
-    const response = await fetch(this.apiEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: apiMessages })
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.error || `HTTP ${response.status}`)
-    }
-
-    const data = await response.json()
-    
-    if (!data.reply) {
-      throw new Error('No reply received from API')
-    }
-
-    return data.reply
-  }
-
   // ==========================================
-  // CONVERSATION MANAGEMENT (Enhanced)
+  // CONVERSATION COMPLETION (Updated)
   // ==========================================
 
   /**
@@ -410,25 +518,26 @@ You may return multiple personas in one message. Use only this exact format with
   }
 
   /**
-   * Get conversation history for a specific persona
+   * Clear messages and start a new discovery conversation
    */
-  async getPersonaConversations(personaId: string): Promise<BackendConversation[]> {
-    try {
-      const response = await fetch(`${this.backendUrl}/personas/${personaId}/conversations`)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      return await response.json()
-    } catch (error) {
-      this.log('Failed to load persona conversations', { error })
-      return []
+  async clearMessages(): Promise<void> {
+    // Complete current conversation if exists
+    if (this.currentConversationId) {
+      await this.completeCurrentConversation(['User requested new conversation'])
     }
+
+    // Start fresh discovery conversation
+    if (this.userId) {
+      await this.startNewDiscoveryConversation()
+    } else {
+      this.initializeWithWelcome()
+    }
+    
+    this.log('Messages cleared and new conversation started')
   }
 
   // ==========================================
-  // MESSAGE MANAGEMENT (Enhanced)
+  // MESSAGE MANAGEMENT & UTILITIES (Unchanged)
   // ==========================================
 
   private addMessage(message: ChatMessage): void {
@@ -449,29 +558,6 @@ You may return multiple personas in one message. Use only this exact format with
   }
 
   /**
-   * Clear messages and start a new conversation
-   */
-  async clearMessages(): Promise<void> {
-    // Complete current conversation if exists
-    if (this.currentConversationId) {
-      await this.completeCurrentConversation(['User requested new conversation'])
-    }
-
-    // Start fresh
-    if (this.userId) {
-      await this.startNewConversation()
-    } else {
-      this.initializeWithWelcome()
-    }
-    
-    this.log('Messages cleared and new conversation started')
-  }
-
-  // ==========================================
-  // STATUS AND MONITORING
-  // ==========================================
-
-  /**
    * Get sync status for UI display
    */
   getSyncStatus(): {
@@ -487,49 +573,6 @@ You may return multiple personas in one message. Use only this exact format with
       lastSyncTime: this.messages.length > 0 ? this.messages[this.messages.length - 1].timestamp : null
     }
   }
-
-  // ==========================================
-  // PERSONA PARSING (Legacy - now handled by agents)
-  // ==========================================
-
-  parsePersonaUpdates(coachReply: string): Array<{
-    action: 'create' | 'update'
-    name: string
-    previousName?: string
-    northStar: string
-  }> {
-    const updates: Array<{
-      action: 'create' | 'update'
-      name: string
-      previousName?: string
-      northStar: string
-    }> = []
-
-    const personaRegex = /Persona:\s*([^\n(]+)(?:\s*\(was:\s*([^)]+)\))?\s*\n?North Star:\s*([^\n]+)/gi
-
-    let match
-    while ((match = personaRegex.exec(coachReply)) !== null) {
-      const name = match[1].trim()
-      const previousName = match[2]?.trim()
-      const northStar = match[3].trim()
-
-      if (name && northStar) {
-        updates.push({
-          action: previousName ? 'update' : 'create',
-          name,
-          previousName,
-          northStar
-        })
-      }
-    }
-
-    this.log('Parsed persona updates', { updates })
-    return updates
-  }
-
-  // ==========================================
-  // UTILITY METHODS
-  // ==========================================
 
   private generateId(): string {
     return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
