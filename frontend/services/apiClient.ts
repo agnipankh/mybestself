@@ -65,6 +65,36 @@ export interface CompleteConversationRequest {
   summary?: string
 }
 
+export interface BackendGoal {
+  id: string
+  user_id: string
+  persona_id: string | null
+  name: string
+  acceptance_criteria?: string
+  review_date: string
+  status: 'active' | 'completed' | 'refined'
+  success_percentage: number
+  review_notes?: string
+  created_at: string
+}
+
+export interface CreateGoalRequest {
+  user_id: string
+  persona_id?: string | null
+  name: string
+  acceptance_criteria?: string
+  review_date: string
+}
+
+export interface UpdateGoalRequest {
+  name?: string
+  acceptance_criteria?: string
+  review_date?: string
+  status?: 'active' | 'completed' | 'refined'
+  success_percentage?: number
+  review_notes?: string
+}
+
 class ApiClient {
   private baseUrl: string
 
@@ -291,6 +321,67 @@ class ApiClient {
    */
   async getConversation(conversationId: string): Promise<BackendConversation> {
     return this.request<BackendConversation>(`/conversations/${conversationId}`)
+  }
+
+  // ============================================
+  // GOAL OPERATIONS
+  // ============================================
+
+  /**
+   * Create a new goal
+   */
+  async createGoal(goalData: CreateGoalRequest): Promise<BackendGoal> {
+    return this.request<BackendGoal>('/goals/', {
+      method: 'POST',
+      body: JSON.stringify(goalData),
+    })
+  }
+
+  /**
+   * Get all goals for a specific persona
+   */
+  async getPersonaGoals(personaId: string): Promise<BackendGoal[]> {
+    return this.request<BackendGoal[]>(`/personas/${personaId}/goals`)
+  }
+
+  /**
+   * Get all goals for a user
+   */
+  async getUserGoals(userId: string): Promise<BackendGoal[]> {
+    return this.request<BackendGoal[]>(`/users/${userId}/goals`)
+  }
+
+  /**
+   * Get a specific goal by ID
+   */
+  async getGoal(goalId: string): Promise<BackendGoal> {
+    return this.request<BackendGoal>(`/goals/${goalId}`)
+  }
+
+  /**
+   * Update a goal by ID
+   */
+  async updateGoal(goalId: string, updates: UpdateGoalRequest): Promise<BackendGoal> {
+    return this.request<BackendGoal>(`/goals/${goalId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    })
+  }
+
+  /**
+   * Delete a goal by ID
+   */
+  async deleteGoal(goalId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/goals/${goalId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  /**
+   * Get goals due for review for a user
+   */
+  async getGoalsDueForReview(userId: string): Promise<BackendGoal[]> {
+    return this.request<BackendGoal[]>(`/users/${userId}/goals/due`)
   }
 
   // ============================================

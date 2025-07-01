@@ -1,6 +1,6 @@
 // services/conversation/ConversationManager.ts - Enhanced with RefinementAgent
 
-import { EducationalAgent, DiscoveryAgent, RefinementAgent, BaseAgent, ManagementAgent} from './agents'
+import { EducationalAgent, DiscoveryAgent, RefinementAgent, BaseAgent, ManagementAgent, GoalAgent} from './agents'
 import { ConversationContext, AgentType, AgentResult } from './ConversationContext'
 import { ChatMessage } from '@/types/chat'
 
@@ -16,8 +16,9 @@ export class ConversationManager {
     this.agents = new Map([
       [AgentType.EDUCATIONAL, new EducationalAgent()],
       [AgentType.DISCOVERY, new DiscoveryAgent()],
-      [AgentType.REFINEMENT, new RefinementAgent()],  // ✅ Now properly registered!
+      [AgentType.REFINEMENT, new RefinementAgent()],
       [AgentType.MANAGEMENT, new ManagementAgent()],
+      [AgentType.GOAL, new GoalAgent()],
     ])
     
     // Validate all agent types are covered (development safety check)
@@ -125,6 +126,14 @@ export class ConversationManager {
   private analyzeIntent(userMessage: string): AgentType {
     const msg = userMessage.toLowerCase()
     
+    // Goal keywords - goal setting and management
+    if (msg.includes('goal') || msg.includes('achieve') || 
+        msg.includes('target') || msg.includes('accomplish') ||
+        msg.includes('track') || msg.includes('progress') ||
+        msg.includes('review') || msg.includes('measure')) {
+      return AgentType.GOAL
+    }
+    
     // Educational keywords - learning about concepts
     if (msg.includes('what is') || msg.includes('what are') || 
         msg.includes('explain') || msg.includes('examples') ||
@@ -192,6 +201,18 @@ export class ConversationManager {
     this.context.targetPersonaId = personaId
     this.context.currentAgentType = AgentType.REFINEMENT
     console.log(`🎯 Targeted persona ${personaId} for refinement`)
+  }
+
+  /**
+   * Set target persona with full persona object for goal setting
+   */
+  setTargetPersonaForGoals(persona: any): void {
+    this.context.targetPersonaId = persona.id
+    this.context.targetPersona = persona
+    this.context.currentAgentType = AgentType.GOAL
+    // Clear any existing conversation history to start fresh
+    this.context.conversationHistory = []
+    console.log(`🎯 Targeted persona ${persona.name} for goal setting`)
   }
 
   /**

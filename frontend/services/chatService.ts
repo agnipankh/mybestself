@@ -197,7 +197,7 @@ export class ChatService {
    * Start a new conversation with specific type and tags
    */
   async startNewConversation(
-    type: 'discovery' | 'refinement' | 'decision_making' = 'discovery',
+    type: 'discovery' | 'refinement' | 'decision_making' | 'goals' = 'discovery',
     topic: string = 'General conversation',
     tags: string[] = []
   ): Promise<void> {
@@ -344,6 +344,8 @@ export class ChatService {
     success: boolean
     coachReply?: string
     personaActions?: any[]
+    goalActions?: any[]
+    transitionActions?: any[]
     error?: string
   }> {
     if (!userMessage.trim()) {
@@ -393,7 +395,9 @@ export class ChatService {
       return { 
         success: true, 
         coachReply: result.userResponse,
-        personaActions: result.personaActions
+        personaActions: result.personaActions,
+        goalActions: result.goalActions,
+        transitionActions: result.transitionActions
       }
 
     } catch (error: any) {
@@ -597,6 +601,64 @@ export class ChatService {
       maxMessages: this.maxMessages,
       enableLogging: this.enableLogging,
       backendUrl: this.backendUrl
+    }
+  }
+
+  /**
+   * Set up goal-setting context with persona information
+   */
+  setupGoalContext(persona: any): void {
+    this.conversationManager.setTargetPersonaForGoals(persona)
+    this.log('Goal context set up', { personaName: persona.name })
+  }
+
+  /**
+   * Start a goal-setting conversation with empty messages
+   */
+  async startGoalConversation(persona: any): Promise<void> {
+    if (!this.userId) {
+      this.messages = [] // Start with empty messages for goals
+      return
+    }
+
+    // Complete current conversation if exists
+    if (this.currentConversationId) {
+      await this.completeCurrentConversation(['User started goal setting'])
+    }
+
+    // Set up goal context first
+    this.setupGoalContext(persona)
+
+    try {
+      const response = await fetch(`${this.backendUrl}/conversations/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: this.userId,
+          conversation_type: 'goals',
+          topic: `Setting goals for ${persona.name} persona`,
+          tags: [persona.name, 'goal-setting']
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const conversation = await response.json()
+      this.currentConversationId = conversation.id
+
+      // Start with empty messages for goal setting
+      this.messages = []
+      
+      this.log('Started goal conversation', { 
+        conversationId: this.currentConversationId,
+        personaName: persona.name
+      })
+    } catch (error) {
+      this.log('Failed to start goal conversation, using local only', { error })
+      this.currentConversationId = null
+      this.messages = [] // Still start with empty messages
     }
   }
 }

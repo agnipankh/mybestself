@@ -157,7 +157,32 @@ export default function SetupIdentityPage() {
           
           const updatedPersonas = await personaService.current.applyUpdates(personaUpdates)
           setPersonas(updatedPersonas)
-        } 
+        }
+
+        // Handle transition to goals
+        if (result.transitionActions && result.transitionActions.length > 0) {
+          console.log('Processing transition actions:', result.transitionActions)
+          
+          for (const transition of result.transitionActions) {
+            if (transition.type === 'transition_to_goals') {
+              // Find the persona by name
+              const targetPersona = personas.find(p => 
+                p.name.toLowerCase().includes(transition.personaName.toLowerCase()) ||
+                transition.personaName.toLowerCase().includes(p.name.toLowerCase())
+              )
+              
+              if (targetPersona) {
+                console.log('Transitioning to goals for persona:', targetPersona.name)
+                // Navigate to the goals page for this persona
+                window.location.href = `/mbs/personas/${targetPersona.id}/goals`
+              } else {
+                console.warn('Could not find persona for transition:', transition.personaName)
+                // Show a message to the user suggesting manual navigation
+                setError(`I'd like to help you set goals for "${transition.personaName}", but I couldn't find that persona. You can navigate to any persona's goals page manually.`)
+              }
+            }
+          }
+        }
       } else if (!result.success) {
         setError(result.error || 'Failed to get response from coach')
       }
@@ -529,14 +554,24 @@ export default function SetupIdentityPage() {
                     placeholder="What drives this persona? What are their core values and goals?"
                   />
                   <div className="flex justify-between items-center">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => removePersona(persona.id)}
-                      className="text-red-600 border-red-300 hover:bg-red-50"
-                    >
-                      Remove
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => window.location.href = `/mbs/personas/${persona.id}/goals`}
+                        className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                      >
+                        Goals
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => removePersona(persona.id)}
+                        className="text-red-600 border-red-300 hover:bg-red-50"
+                      >
+                        Remove
+                      </Button>
+                    </div>
                     <span className="text-xs text-gray-400">
                       {persona.updatedAt.toLocaleDateString()}
                     </span>

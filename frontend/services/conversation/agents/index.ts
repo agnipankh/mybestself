@@ -3,4 +3,5 @@ export { BaseAgent } from './BaseAgent'
 export { EducationalAgent } from './EducationalAgent'
 export { DiscoveryAgent } from './DiscoveryAgent'
 export { RefinementAgent } from './RefinementAgent'
-export { ManagementAgent } from './ManagementAgent'  // ✅ Now included!
+export { ManagementAgent } from './ManagementAgent'
+export { GoalAgent } from './GoalAgent'

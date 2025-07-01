@@ -101,6 +101,6 @@ class Goal(Base):
     review_notes = Column(Text)
     
     # Relationships
-    user = relationship("User")
+    user = relationship("User", back_populates="goals")
     persona = relationship("Persona", back_populates="goals")
 
