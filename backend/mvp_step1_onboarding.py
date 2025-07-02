@@ -47,6 +47,7 @@ class PersonaUpdate(BaseModel):
     label: Optional[str] = None
     north_star: Optional[str] = None
     is_calling: Optional[bool] = None
+    importance: Optional[int] = None
 
 class GoalCreate(BaseModel):
     user_id: UUID
@@ -54,11 +55,15 @@ class GoalCreate(BaseModel):
     name: str
     acceptance_criteria: Optional[str] = None
     review_date: datetime
+    planned_hours: Optional[int] = 0
+    actual_hours: Optional[int] = 0
 
 class GoalUpdate(BaseModel):
     name: Optional[str] = None
     acceptance_criteria: Optional[str] = None
     review_date: Optional[datetime] = None
+    planned_hours: Optional[int] = None
+    actual_hours: Optional[int] = None
     status: Optional[str] = None
     success_percentage: Optional[int] = None
     review_notes: Optional[str] = None
@@ -146,6 +151,8 @@ def update_persona(persona_id: UUID, persona_update: PersonaUpdate, db: Session 
         persona.north_star = persona_update.north_star
     if persona_update.is_calling is not None:
         persona.is_calling = persona_update.is_calling
+    if persona_update.importance is not None:
+        persona.importance = persona_update.importance
     
     persona.updated_at = datetime.utcnow()
     
@@ -496,7 +503,9 @@ def create_goal(goal: GoalCreate, db: Session = Depends(get_db)):
         persona_id=goal.persona_id,
         name=goal.name,
         acceptance_criteria=goal.acceptance_criteria,
-        review_date=goal.review_date
+        review_date=goal.review_date,
+        planned_hours=goal.planned_hours or 0,
+        actual_hours=goal.actual_hours or 0
     )
     db.add(db_goal)
     db.commit()
@@ -542,6 +551,10 @@ def update_goal(goal_id: UUID, goal_update: GoalUpdate, db: Session = Depends(ge
         goal.success_percentage = goal_update.success_percentage
     if goal_update.review_notes is not None:
         goal.review_notes = goal_update.review_notes
+    if goal_update.planned_hours is not None:
+        goal.planned_hours = goal_update.planned_hours
+    if goal_update.actual_hours is not None:
+        goal.actual_hours = goal_update.actual_hours
     
     db.commit()
     db.refresh(goal)
@@ -586,6 +599,87 @@ def get_goals_due_for_review(user_id: UUID, db: Session = Depends(get_db)):
             due_goals.append(goal)
     
     return due_goals
+
+# ============================================
+# DASHBOARD ROUTES  
+# ============================================
+
+class DashboardPersona(BaseModel):
+    id: str
+    name: str
+    importance: int
+    progress: int
+    actual_time: float
+    goals: List[dict]
+
+class DashboardUser(BaseModel):
+    id: str 
+    name: str
+    overall_progress: int
+
+class DashboardData(BaseModel):
+    user: DashboardUser
+    personas: List[DashboardPersona]
+
+@app.get("/users/{user_id}/dashboard", response_model=DashboardData)
+def get_user_dashboard(user_id: UUID, db: Session = Depends(get_db)):
+    """Get dashboard data for force-directed visualization"""
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    personas_data = []
+    total_importance_weight = 0
+    total_weighted_progress = 0
+    
+    for persona in user.personas:
+        # Calculate persona metrics
+        goals_data = []
+        total_planned = 0
+        total_actual = 0
+        weighted_progress = 0
+        
+        for goal in persona.goals:
+            goals_data.append({
+                "id": str(goal.id),
+                "name": goal.name,
+                "planned": goal.planned_hours,
+                "actual": goal.actual_hours, 
+                "progress": goal.success_percentage
+            })
+            total_planned += goal.planned_hours
+            total_actual += goal.actual_hours
+            # Weight goal progress by planned hours
+            if total_planned > 0:
+                weighted_progress += (goal.success_percentage * goal.planned_hours)
+        
+        # Calculate persona progress (weighted average of goals by planned hours)
+        persona_progress = int(weighted_progress / total_planned) if total_planned > 0 else 0
+        
+        personas_data.append({
+            "id": str(persona.id),
+            "name": persona.label,
+            "importance": persona.importance,
+            "progress": persona_progress,
+            "actual_time": total_actual,
+            "goals": goals_data
+        })
+        
+        # Accumulate for user overall progress (weighted by importance)
+        total_importance_weight += persona.importance
+        total_weighted_progress += (persona_progress * persona.importance)
+    
+    # Calculate user overall progress
+    user_progress = int(total_weighted_progress / total_importance_weight) if total_importance_weight > 0 else 0
+    
+    return DashboardData(
+        user=DashboardUser(
+            id=str(user.id),
+            name=user.name or user.email,
+            overall_progress=user_progress
+        ),
+        personas=personas_data
+    )
 
 # Include auth router
 from email_magic_link_auth import router as auth_router

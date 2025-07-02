@@ -59,8 +59,12 @@ class Persona(Base):
     label = Column(String)
     north_star = Column(String)
     is_calling = Column(Boolean, default=False)
+    
+    # Dashboard visualization field
+    importance = Column(Integer, default=3)  # 1-5 importance scale for user prioritization
+    
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Add this
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     user = relationship("User", back_populates="personas")
     goals = relationship("Goal", back_populates="persona")
@@ -96,6 +100,10 @@ class Goal(Base):
     # Status and tracking
     status = Column(String, default='active')  # 'active', 'completed', 'refined'
     success_percentage = Column(Integer, default=0)  # 0-100
+    
+    # Time tracking for dashboard visualization
+    planned_hours = Column(Integer, default=0)  # Hours user planned to spend
+    actual_hours = Column(Integer, default=0)   # Hours user actually spent
     
     # Weekly review notes
     review_notes = Column(Text)

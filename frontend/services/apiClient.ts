@@ -5,6 +5,7 @@ export interface BackendPersona {
   label: string
   north_star: string
   is_calling: boolean
+  importance?: number
   created_at: string
   updated_at: string
 }
@@ -41,6 +42,7 @@ export interface CreatePersonaRequest {
   label: string
   north_star: string
   is_calling?: boolean
+  importance?: number
 }
 
 export interface CreateUserRequest {
@@ -74,6 +76,8 @@ export interface BackendGoal {
   review_date: string
   status: 'active' | 'completed' | 'refined'
   success_percentage: number
+  planned_hours?: number
+  actual_hours?: number
   review_notes?: string
   created_at: string
 }
@@ -84,6 +88,8 @@ export interface CreateGoalRequest {
   name: string
   acceptance_criteria?: string
   review_date: string
+  planned_hours?: number
+  actual_hours?: number
 }
 
 export interface UpdateGoalRequest {
@@ -92,7 +98,38 @@ export interface UpdateGoalRequest {
   review_date?: string
   status?: 'active' | 'completed' | 'refined'
   success_percentage?: number
+  planned_hours?: number
+  actual_hours?: number
   review_notes?: string
+}
+
+// Dashboard-specific types
+export interface DashboardGoal {
+  id: string
+  name: string
+  planned: number
+  actual: number
+  progress: number
+}
+
+export interface DashboardPersona {
+  id: string
+  name: string
+  importance: number
+  progress: number
+  actual_time: number
+  goals: DashboardGoal[]
+}
+
+export interface DashboardUser {
+  id: string
+  name: string
+  overall_progress: number
+}
+
+export interface DashboardData {
+  user: DashboardUser
+  personas: DashboardPersona[]
 }
 
 class ApiClient {
@@ -382,6 +419,17 @@ class ApiClient {
    */
   async getGoalsDueForReview(userId: string): Promise<BackendGoal[]> {
     return this.request<BackendGoal[]>(`/users/${userId}/goals/due`)
+  }
+
+  // ============================================
+  // DASHBOARD METHODS
+  // ============================================
+
+  /**
+   * Get dashboard data for force-directed visualization
+   */
+  async getDashboardData(userId: string): Promise<DashboardData> {
+    return this.request<DashboardData>(`/users/${userId}/dashboard`)
   }
 
   // ============================================

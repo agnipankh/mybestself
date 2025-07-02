@@ -41,7 +41,9 @@ export default function PersonaGoalsPage() {
   const [newGoal, setNewGoal] = useState({
     name: '',
     acceptance_criteria: '',
-    review_date: ''
+    review_date: '',
+    planned_hours: 0,
+    actual_hours: 0
   })
   
   // Goal editing state
@@ -213,12 +215,14 @@ export default function PersonaGoalsPage() {
         persona_id: personaId,
         name: newGoal.name,
         acceptance_criteria: newGoal.acceptance_criteria || undefined,
-        review_date: newGoal.review_date
+        review_date: newGoal.review_date,
+        planned_hours: newGoal.planned_hours,
+        actual_hours: newGoal.actual_hours
       }
 
       const createdGoal = await apiClient.createGoal(goalData)
       setGoals(prev => [...prev, createdGoal])
-      setNewGoal({ name: '', acceptance_criteria: '', review_date: '' })
+      setNewGoal({ name: '', acceptance_criteria: '', review_date: '', planned_hours: 0, actual_hours: 0 })
       setShowGoalForm(false)
       setError(null)
     } catch (error: any) {
@@ -342,8 +346,40 @@ export default function PersonaGoalsPage() {
         
         <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
           <CardHeader>
-            <CardTitle className="text-2xl text-gray-800">{persona.name}</CardTitle>
-            <p className="text-gray-600 mt-2">{persona.northStar}</p>
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <CardTitle className="text-2xl text-gray-800">{persona.name}</CardTitle>
+                <p className="text-gray-600 mt-2">{persona.northStar}</p>
+              </div>
+              <div className="ml-6 text-right">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Importance Level
+                </label>
+                <select
+                  value={persona.importance || 3}
+                  onChange={async (e) => {
+                    const newImportance = Number(e.target.value)
+                    try {
+                      // Update persona importance via API
+                      await apiClient.updatePersona(persona.id, { importance: newImportance })
+                      // Update local state
+                      setPersona(prev => prev ? { ...prev, importance: newImportance } : null)
+                    } catch (error) {
+                      console.error('Failed to update persona importance:', error)
+                      setError('Failed to update importance level')
+                    }
+                  }}
+                  className="bg-white border border-gray-300 rounded-md px-3 py-1 text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value={1}>1 - Low</option>
+                  <option value={2}>2 - Below Average</option>
+                  <option value={3}>3 - Medium</option>
+                  <option value={4}>4 - High</option>
+                  <option value={5}>5 - Critical</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Used for dashboard priority</p>
+              </div>
+            </div>
           </CardHeader>
         </Card>
       </div>
@@ -479,6 +515,36 @@ export default function PersonaGoalsPage() {
                   className="w-full bg-white border border-gray-300 rounded-md p-3 resize-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
                   rows={3}
                 />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Planned Hours
+                    </label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      placeholder="Hours you plan to spend"
+                      value={newGoal.planned_hours || ''}
+                      onChange={e => setNewGoal(prev => ({ ...prev, planned_hours: Number(e.target.value) }))}
+                      className="bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Actual Hours
+                    </label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      placeholder="Hours spent so far"
+                      value={newGoal.actual_hours || ''}
+                      onChange={e => setNewGoal(prev => ({ ...prev, actual_hours: Number(e.target.value) }))}
+                      className="bg-white"
+                    />
+                  </div>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Review Date
@@ -502,7 +568,7 @@ export default function PersonaGoalsPage() {
                     variant="outline"
                     onClick={() => {
                       setShowGoalForm(false)
-                      setNewGoal({ name: '', acceptance_criteria: '', review_date: '' })
+                      setNewGoal({ name: '', acceptance_criteria: '', review_date: '', planned_hours: 0, actual_hours: 0 })
                     }}
                   >
                     Cancel
@@ -584,6 +650,34 @@ export default function PersonaGoalsPage() {
                         className="w-full bg-gray-50 border border-gray-300 rounded-md p-3 resize-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
                         rows={2}
                       />
+                      <div className="grid grid-cols-2 gap-4 mb-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Planned Hours
+                          </label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            defaultValue={goal.planned_hours || 0}
+                            onBlur={e => Number(e.target.value) !== (goal.planned_hours || 0) && updateGoal(goal.id, { planned_hours: Number(e.target.value) })}
+                            className="bg-gray-50"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Actual Hours
+                          </label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            defaultValue={goal.actual_hours || 0}
+                            onBlur={e => Number(e.target.value) !== (goal.actual_hours || 0) && updateGoal(goal.id, { actual_hours: Number(e.target.value) })}
+                            className="bg-gray-50"
+                          />
+                        </div>
+                      </div>
                       <div className="flex gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
