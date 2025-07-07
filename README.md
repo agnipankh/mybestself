@@ -8,6 +8,8 @@ Its easy to get distracted in the world of today and get caught up in the day to
 * For each of the goals a required effort is tracked along with the spent time. There is no automated way to do this, you do it as you go along. 
 * Finally a D3 visualization helps you see where you are spending the most time and whether it aligns with your values 
 
+I implemented this project for a couple of reasons. I believe there is anything good out there that helps us track the arete's and the goals associated with them and 2nd I wanted to build an agentic application with a few agents talking to each other. 
+
 ## Project Architecture
 
 **MyBestSelf** is a full-stack agentic application that helps users create the best version of themselves through persona-driven goal setting and habit tracking.
