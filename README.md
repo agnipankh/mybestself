@@ -2,7 +2,7 @@
 
 Its easy to get distracted in the world of today and get caught up in the day to day and not focus on what needs to be done. This tool is an attempt to help you become the best version of yourself. 
 
-* The app, first helps you identify your major personas (upto 9 personas) in your life. We believe that for most people its good to focus on these 9 personas rather than trying to lead a distracted life. 
+* The app, first helps you identify your major personas (upto 9 personas) in your life. We believe that for most people its good to focus on these 9 personas rather than trying to lead a distracted life. These personas will be what will be called "Arete" by Greeks or as Tony Robbins will say "Areas of Continuous Improvements".  
 * The agent helps you identify a unique northstar for each of the personas. 
 * Then we identify 1-3 goals for each of the personas. 
 * For each of the goals a required effort is tracked along with the spent time. There is no automated way to do this, you do it as you go along. 
