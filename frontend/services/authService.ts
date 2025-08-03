@@ -3,6 +3,7 @@ export interface User {
   id: string  // This will be a UUID string from your backend
   email: string
   isAuthenticated: boolean
+  loginTimestamp: number  // Unix timestamp when user logged in
 }
 
 export interface AuthState {
@@ -15,6 +16,7 @@ export class AuthService {
   private user: User | null = null
   private listeners: ((user: User | null) => void)[] = []
   private readonly BACKEND_URL = 'http://localhost:8000'
+  private readonly SESSION_DURATION_MS = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
 
   constructor() {
     // Check for existing session on initialization
@@ -30,13 +32,36 @@ export class AuthService {
     const userData = localStorage.getItem('user')
     if (userData) {
       try {
-        this.user = JSON.parse(userData)
+        const user = JSON.parse(userData)
+        
+        // Check if session has expired (24 hours)
+        if (this.isSessionExpired(user)) {
+          console.log('Session expired, signing out user')
+          this.signOut()
+          return
+        }
+        
+        this.user = user
         this.notifyListeners()
       } catch (error) {
         console.error('Failed to parse stored user data:', error)
         localStorage.removeItem('user')
       }
     }
+  }
+
+  /**
+   * Check if a user session has expired
+   */
+  private isSessionExpired(user: User): boolean {
+    if (!user.loginTimestamp) {
+      // If no timestamp, treat as expired (for backwards compatibility)
+      return true
+    }
+    
+    const now = Date.now()
+    const timeSinceLogin = now - user.loginTimestamp
+    return timeSinceLogin > this.SESSION_DURATION_MS
   }
 
   /**
@@ -50,7 +75,17 @@ export class AuthService {
    * Check if user is authenticated
    */
   isAuthenticated(): boolean {
-    return this.user?.isAuthenticated ?? false
+    if (!this.user?.isAuthenticated) {
+      return false
+    }
+    
+    // Check if session has expired
+    if (this.isSessionExpired(this.user)) {
+      this.signOut()
+      return false
+    }
+    
+    return true
   }
 
   /**
@@ -101,6 +136,7 @@ export class AuthService {
         id: data.user_id, // This is a UUID string from your backend
         email: data.email || '', // Add email to your backend response if not already there
         isAuthenticated: true,
+        loginTimestamp: Date.now(), // Store current timestamp for 24-hour expiration
       }
 
       // Store user session
