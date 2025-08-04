@@ -1,7 +1,7 @@
 # models.py
 
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, Integer
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, Integer, Float
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
@@ -41,6 +41,16 @@ class Conversation(Base):
     # Insights from the conversation
     key_insights = Column(ARRAY(String), default=list)
     conversation_summary = Column(Text)
+    
+    # Agent system fields
+    agent_type = Column(String, default='educational')  # Current agent handling conversation
+    context_state = Column(JSONB, default=dict)         # Agent-specific context data
+    intent = Column(String, nullable=True)              # Last detected user intent
+    intent_confidence = Column(Float, default=0.0)      # Confidence score for intent detection
+    
+    # Session management fields
+    session_id = Column(UUID(as_uuid=True), nullable=True)     # Groups related conversations in a session
+    session_started_at = Column(DateTime, nullable=True)       # When the session began
     
     # Timing
     started_at = Column(DateTime, default=datetime.utcnow)

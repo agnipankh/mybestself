@@ -6,9 +6,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from db import SessionLocal, init_db
 from models import User, Persona, Conversation, Goal
+from conversation_models import ConversationRequest, ConversationResponse, DatabaseChanges, AgentTransition, ContextUpdates
+from conversation_manager import ConversationManager
 from typing import Optional, List
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 from sqlalchemy.exc import IntegrityError
 
 app = FastAPI()
@@ -475,6 +477,54 @@ def search_conversations(
         "conversation_type_filter": conversation_type
     }
 
+
+
+# ============================================
+# CONVERSATION PROCESSING ROUTES (New Agent System)
+# ============================================
+
+@app.post("/api/conversation/process", response_model=ConversationResponse)
+async def process_conversation(request: ConversationRequest, db: Session = Depends(get_db)):
+    """
+    Process a user message through the intelligent agent system
+    Uses ConversationManager for intent analysis and agent selection
+    """
+    try:
+        # Create ConversationManager instance
+        conversation_manager = ConversationManager()
+        
+        # Process message through the conversation manager
+        response = await conversation_manager.process_message(request, db)
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing conversation: {str(e)}")
+
+
+@app.post("/api/conversation/analyze-intent")
+async def analyze_intent(request: dict):
+    """
+    Analyze intent of a message (for testing/debugging)
+    """
+    try:
+        conversation_manager = ConversationManager()
+        message = request.get('message', '')
+        context = request.get('context', {})
+        
+        intent, confidence = conversation_manager.analyze_intent(message, context)
+        agent = conversation_manager.select_agent(intent, context)
+        
+        return {
+            'message': message,
+            'intent': intent,
+            'confidence': confidence,
+            'selected_agent': agent,
+            'available_agents': conversation_manager.get_available_agents()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing intent: {str(e)}")
 
 
 # ============================================

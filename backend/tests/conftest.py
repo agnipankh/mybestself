@@ -39,8 +39,9 @@ def test_db(test_engine):
     with test_engine.connect() as conn:
         trans = conn.begin()
         try:
-            # Delete all data in dependency order (goals depend on personas and users)
+            # Delete all data in dependency order (conversations depend on users)
             conn.execute(text("DELETE FROM goals"))
+            conn.execute(text("DELETE FROM conversations"))
             conn.execute(text("DELETE FROM magic_links"))
             conn.execute(text("DELETE FROM personas")) 
             conn.execute(text("DELETE FROM users"))
